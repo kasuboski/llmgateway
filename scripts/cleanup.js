@@ -9,7 +9,7 @@ const API_ENDPOINT_PROD = 'https://ai-gateway-proxy.favoritechild.workers.dev';
 
 function getAdminApiKey() {
   const isProd = process.argv.includes('--prod');
-  
+
   if (isProd) {
     if (!process.env.ADMIN_API_KEY) {
       console.error('❌ ADMIN_API_KEY environment variable is required for production');
@@ -18,7 +18,7 @@ function getAdminApiKey() {
     }
     return process.env.ADMIN_API_KEY;
   }
-  
+
   return process.env.ADMIN_API_KEY || 'admin_test_key_123';
 }
 
