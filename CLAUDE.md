@@ -20,7 +20,7 @@ pnpm dev
 ```bash
 # Deploy to Cloudflare Workers
 npm run deploy
-# or  
+# or
 pnpm deploy
 ```
 
@@ -46,7 +46,7 @@ This project implements a KV-only multi-user AI Gateway designed for global edge
 
 The system uses KV storage with a structured key pattern:
 - `user:{user_id}:config` - User configuration and limits
-- `user:{user_id}:quota` - Monthly usage tracking  
+- `user:{user_id}:quota` - Monthly usage tracking
 - `apikey:{hash}` - API key authentication lookup
 - `org:{org_id}:config` - Organization settings and failure modes
 - `org:{org_id}:quota` - Organization usage tracking
@@ -66,6 +66,7 @@ The system uses KV storage with a structured key pattern:
 - `spec.md` - Detailed architecture specification and implementation guide
 - `package.json` - Dependencies (Hono framework)
 - `tsconfig.json` - TypeScript configuration with ESNext targets
+- `docs/` - Knowledge base for Claude Code. Seach these files for platform references.
 
 ## Development Notes
 
