@@ -5,7 +5,7 @@
  */
 
 const API_ENDPOINT_DEV = 'http://localhost:8787';
-const API_ENDPOINT_PROD = 'https://your-worker.your-account.workers.dev';
+const API_ENDPOINT_PROD = 'https://ai-gateway-proxy.favoritechild.workers.dev';
 
 // Default test API key (should be replaced with real key from setup)
 const DEFAULT_API_KEY = 'gw_live_demo123456789abcdef';

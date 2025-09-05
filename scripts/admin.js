@@ -5,7 +5,7 @@
  */
 
 const API_ENDPOINT_DEV = 'http://localhost:8787';
-const API_ENDPOINT_PROD = 'https://your-worker.your-account.workers.dev';
+const API_ENDPOINT_PROD = 'https://ai-gateway-proxy.favoritechild.workers.dev';
 const ADMIN_API_KEY = 'admin_test_key_123';
 
 function getApiEndpoint() {
