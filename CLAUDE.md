@@ -7,28 +7,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This is a Cloudflare Workers-based AI Gateway proxy built with Hono, designed to provide multi-user AI request management with KV-only storage architecture for optimal edge performance.
 
 ## Development Commands
+We use pnpm NOT npm.
 
 ### Development
 ```bash
 # Start development server
-npm run dev
-# or
 pnpm dev
 ```
 
 ### Deployment
 ```bash
 # Deploy to Cloudflare Workers
-npm run deploy
-# or
 pnpm deploy
 ```
 
 ### Type Generation
 ```bash
 # Generate Cloudflare bindings types
-npm run cf-typegen
-# or
 pnpm cf-typegen
 ```
 
@@ -62,6 +57,16 @@ The system uses KV storage with a structured key pattern:
 ## File Structure
 
 - `src/index.ts` - Main application entry point with Hono setup
+- `src/lib/` - Core utility libraries and business logic
+  - `auth.ts` - Authentication middleware and utilities
+  - `crypto.ts` - Cryptographic functions (API key generation, hashing)
+  - `errors.ts` - Error handling utilities
+  - `costs.ts` - AI model cost calculation utilities
+  - `quota.ts` - Usage quota management and tracking
+- `src/routes/` - API route handlers
+  - `admin.ts` - Admin API endpoints for user and organization management
+  - `chat.ts` - OpenAI-compatible chat completions proxy
+- `src/types.ts` - TypeScript type definitions
 - `wrangler.jsonc` - Cloudflare Workers configuration
 - `spec.md` - Detailed architecture specification and implementation guide
 - `package.json` - Dependencies (Hono framework)
@@ -76,11 +81,10 @@ The system uses KV storage with a structured key pattern:
 - JSX configured for Hono's JSX runtime
 
 ### Cloudflare Bindings
-After adding KV namespaces, D1 databases, or other Cloudflare services to `wrangler.jsonc`, run `npm run cf-typegen` to generate proper TypeScript types.
+After adding KV namespaces, D1 databases, or other Cloudflare services to `wrangler.jsonc`, run `pnpm run cf-typegen` to generate proper TypeScript types.
 
 ### Architecture Reference
-The `spec.md` file contains the complete architecture specification including:
+The `README.md` file contains the complete architecture specification including:
 - Detailed API specifications for admin endpoints
 - KV storage patterns and quota management
 - Authentication and security implementation
-- Migration path from manual to automated control plane
