@@ -216,7 +216,7 @@ async function testChat() {
     console.error('❌ Chat test failed:', error.message);
 
     console.log('\n🔧 Troubleshooting:');
-    console.log('   - Make sure the dev server is running: npm run dev');
+    console.log('   - Make sure the dev server is running: pnpm dev');
     console.log('   - Check if the endpoint is accessible');
     console.log('   - Verify your API key with: node scripts/admin.js metrics');
 

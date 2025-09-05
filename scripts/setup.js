@@ -6,7 +6,21 @@
 
 const API_ENDPOINT_DEV = 'http://localhost:8787';
 const API_ENDPOINT_PROD = 'https://ai-gateway-proxy.favoritechild.workers.dev';
-const ADMIN_API_KEY = 'admin_test_key_123';
+
+function getAdminApiKey() {
+  const isProd = process.argv.includes('--prod');
+  
+  if (isProd) {
+    if (!process.env.ADMIN_API_KEY) {
+      console.error('❌ ADMIN_API_KEY environment variable is required for production');
+      console.error('   Set it with: export ADMIN_API_KEY="your_admin_key"');
+      process.exit(1);
+    }
+    return process.env.ADMIN_API_KEY;
+  }
+  
+  return process.env.ADMIN_API_KEY || 'admin_test_key_123';
+}
 
 function getApiEndpoint() {
   return process.argv.includes('--prod') ? API_ENDPOINT_PROD : API_ENDPOINT_DEV;
@@ -16,7 +30,7 @@ async function makeRequest(url, options = {}) {
   const response = await fetch(url, {
     ...options,
     headers: {
-      Authorization: `Bearer ${ADMIN_API_KEY}`,
+      Authorization: `Bearer ${getAdminApiKey()}`,
       'Content-Type': 'application/json',
       ...options.headers,
     },
@@ -96,14 +110,14 @@ async function setup() {
   console.log(`🚀 AI Gateway Setup Script`);
   console.log(`📍 Environment: ${environment}`);
   console.log(`🔗 Endpoint: ${endpoint}`);
-  console.log(`🗝️  Admin Key: ${ADMIN_API_KEY.substring(0, 10)}...`);
+  console.log(`🗝️  Admin Key: ${getAdminApiKey().substring(0, 10)}...`);
   console.log('');
 
   // Check system health
   const isHealthy = await checkSystemHealth();
   if (!isHealthy) {
     console.log('❌ System health check failed. Make sure the dev server is running.');
-    console.log('   Run: ADMIN_API_KEY="admin_test_key_123" npm run dev');
+    console.log('   Run: ADMIN_API_KEY="admin_test_key_123" pnpm dev');
     process.exit(1);
   }
 
