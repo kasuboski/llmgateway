@@ -155,6 +155,8 @@ admin.post('/users', zValidator('json', CreateUserSchema), async c => {
 
     await GATEWAY_KV.put(`user:${userId}:config`, JSON.stringify(user));
     await GATEWAY_KV.put(`apikey:${keyHash}`, JSON.stringify(apiKeyRecord));
+    await GATEWAY_KV.put(`user:${userId}:apikey:${keyId}`, keyHash);
+    await GATEWAY_KV.put(`apikey:${keyId}`, keyHash);
 
     return c.json({
       user: user,
@@ -263,6 +265,8 @@ admin.post('/users/:user_id/api-keys', zValidator('param', UserIdParamSchema), a
     };
 
     await GATEWAY_KV.put(`apikey:${keyHash}`, JSON.stringify(apiKeyRecord));
+    await GATEWAY_KV.put(`user:${userId}:apikey:${keyId}`, keyHash);
+    await GATEWAY_KV.put(`apikey:${keyId}`, keyHash);
 
     return c.json({
       api_key: apiKey,
@@ -290,21 +294,27 @@ admin.get('/users/:user_id/api-keys', zValidator('param', UserIdParamSchema), as
       return c.json({ error: { message: 'User not found', type: 'not_found' } }, 404);
     }
 
-    // Get all API keys and filter by user_id
+    // Get all API keys for this user using the index
     const apiKeys = [];
     let cursor: string | undefined;
 
     do {
-      const result = await GATEWAY_KV.list({ prefix: 'apikey:', cursor });
+      const result = await GATEWAY_KV.list({ prefix: `user:${userId}:apikey:`, cursor });
 
       for (const key of result.keys) {
-        const apiKeyRecord = (await GATEWAY_KV.get(key.name, 'json')) as ApiKeyRecord | null;
-        if (apiKeyRecord && apiKeyRecord.user_id === userId) {
-          apiKeys.push({
-            key_id: apiKeyRecord.key_id,
-            status: apiKeyRecord.status,
-            created_at: apiKeyRecord.created_at,
-          });
+        const keyHash = await GATEWAY_KV.get(key.name);
+        if (keyHash) {
+          const apiKeyRecord = (await GATEWAY_KV.get(
+            `apikey:${keyHash}`,
+            'json'
+          )) as ApiKeyRecord | null;
+          if (apiKeyRecord) {
+            apiKeys.push({
+              key_id: apiKeyRecord.key_id,
+              status: apiKeyRecord.status,
+              created_at: apiKeyRecord.created_at,
+            });
+          }
         }
       }
 
@@ -340,8 +350,29 @@ admin.delete(
         return c.json({ error: { message: 'User not found', type: 'not_found' } }, 404);
       }
 
+      // Find the API key using the index
+      const keyHash = await GATEWAY_KV.get(`user:${userId}:apikey:${keyId}`);
+      let foundApiKey = false;
+
+      if (keyHash) {
+        const apiKeyRecord = (await GATEWAY_KV.get(
+          `apikey:${keyHash}`,
+          'json'
+        )) as ApiKeyRecord | null;
+        if (apiKeyRecord && apiKeyRecord.user_id === userId && apiKeyRecord.key_id === keyId) {
+          // Found the API key, update its status to revoked
+          apiKeyRecord.status = 'revoked';
+          await GATEWAY_KV.put(`apikey:${keyHash}`, JSON.stringify(apiKeyRecord));
+          foundApiKey = true;
+        }
+      }
+
+      if (!foundApiKey) {
+        return c.json({ error: { message: 'API key not found', type: 'not_found' } }, 404);
+      }
+
       return c.json({
-        message: `To revoke key ${keyId}, update the corresponding apikey:* record in KV to set status: 'revoked'`,
+        message: 'API key revoked successfully',
         key_id: keyId,
         user_id: userId,
       });
