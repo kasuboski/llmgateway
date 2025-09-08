@@ -290,9 +290,32 @@ admin.get('/users/:user_id/api-keys', zValidator('param', UserIdParamSchema), as
       return c.json({ error: { message: 'User not found', type: 'not_found' } }, 404);
     }
 
+    // Get all API keys and filter by user_id
+    const apiKeys = [];
+    let cursor: string | undefined;
+
+    do {
+      const result = await GATEWAY_KV.list({ prefix: 'apikey:', cursor });
+
+      for (const key of result.keys) {
+        const apiKeyRecord = (await GATEWAY_KV.get(key.name, 'json')) as ApiKeyRecord | null;
+        if (apiKeyRecord && apiKeyRecord.user_id === userId) {
+          apiKeys.push({
+            key_id: apiKeyRecord.key_id,
+            status: apiKeyRecord.status,
+            created_at: apiKeyRecord.created_at,
+          });
+        }
+      }
+
+      cursor = result.list_complete ? undefined : result.cursor;
+    } while (cursor);
+
     return c.json({
-      message: 'API key listing requires key indexing. Use KV console to view apikey:* entries.',
       user_id: userId,
+      api_keys: apiKeys.sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      ),
     });
   } catch (error) {
     console.error('Get API keys error:', error);
