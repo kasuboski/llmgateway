@@ -261,15 +261,14 @@ chat.post(
         body: requestBodyText,
       });
 
-      // Calculate actual cost from response if possible
+      // Read response body once to avoid stream locking issues
+      const responseBody = await response.text();
       let actualCost = estimatedCost;
-      let responseData: any = null;
 
       if (response.ok) {
         try {
-          // Clone the response to read usage data without consuming the original body
-          const responseClone = response.clone();
-          responseData = await responseClone.json();
+          // Parse response to get usage data
+          const responseData = JSON.parse(responseBody);
 
           if (responseData.usage) {
             const { prompt_tokens = 0, completion_tokens = 0 } = responseData.usage;
@@ -302,8 +301,8 @@ chat.post(
         };
       }
 
-      // Create response with usage headers
-      const proxyResponse = new Response(response.body, {
+      // Create response with usage headers using the response body we already read
+      const proxyResponse = new Response(responseBody, {
         status: response.status,
         statusText: response.statusText,
         headers: response.headers,
