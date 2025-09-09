@@ -263,12 +263,13 @@ chat.post(
 
       // Calculate actual cost from response if possible
       let actualCost = estimatedCost;
+      let responseData: any = null;
 
       if (response.ok) {
         try {
-          // Try to get usage information from response
+          // Clone the response to read usage data without consuming the original body
           const responseClone = response.clone();
-          const responseData = await responseClone.json();
+          responseData = await responseClone.json();
 
           if (responseData.usage) {
             const { prompt_tokens = 0, completion_tokens = 0 } = responseData.usage;

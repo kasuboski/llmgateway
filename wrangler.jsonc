@@ -10,6 +10,11 @@
     "AI_GATEWAY_ACCOUNT_ID": "c03d6c824602468a0bc4b96d87487ca4",
     "AI_GATEWAY_ID": "llmgateway",
   },
+  "observability": {
+    "logs": {
+      "enabled": true,
+    },
+  },
   "kv_namespaces": [
     {
       "binding": "GATEWAY_KV",
