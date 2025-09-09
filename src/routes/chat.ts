@@ -53,8 +53,8 @@ chat.post(
       // Use validated JSON for logic
       const payload = c.req.valid('json');
       const model = payload.model;
-      // Clone the raw request to preserve all fields when proxying to AI Gateway
-      const requestBodyText = await c.req.raw.clone().text();
+      // Serialize the validated payload back to JSON for proxying
+      const requestBodyText = JSON.stringify(payload);
 
       // Estimate cost for quota check
       const estimatedCost = estimateCostFromRequest(model, payload);
