@@ -94,11 +94,10 @@ export async function updateOrganizationQuotaUsage(
   return quotaRecord;
 }
 
-export async function checkHierarchicalQuotaLimit(
+export async function checkReactiveQuotaLimit(
   kv: KVNamespace,
   userId: string,
   orgId: string,
-  estimatedCostUsd: number,
   userMonthlyLimitUsd: number,
   orgMonthlyBudgetUsd: number
 ): Promise<{
@@ -107,16 +106,12 @@ export async function checkHierarchicalQuotaLimit(
   orgQuotaRecord: QuotaRecord;
   reason?: string;
 }> {
-  // Check user quota
+  // Get current usage records
   const userQuotaRecord = await getQuotaRecord(kv, userId);
-  const projectedUserUsage = userQuotaRecord.month_usage_usd + estimatedCostUsd;
-
-  // Check organization quota
   const orgQuotaRecord = await getOrganizationQuotaRecord(kv, orgId);
-  const projectedOrgUsage = orgQuotaRecord.month_usage_usd + estimatedCostUsd;
 
-  // User quota check
-  if (projectedUserUsage > userMonthlyLimitUsd) {
+  // User quota check - only check actual current usage
+  if (userQuotaRecord.month_usage_usd >= userMonthlyLimitUsd) {
     return {
       allowed: false,
       userQuotaRecord,
@@ -125,8 +120,8 @@ export async function checkHierarchicalQuotaLimit(
     };
   }
 
-  // Organization quota check
-  if (projectedOrgUsage > orgMonthlyBudgetUsd) {
+  // Organization quota check - only check actual current usage
+  if (orgQuotaRecord.month_usage_usd >= orgMonthlyBudgetUsd) {
     return {
       allowed: false,
       userQuotaRecord,

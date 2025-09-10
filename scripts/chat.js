@@ -206,8 +206,11 @@ async function testChat() {
       console.log(`   Completion tokens: ${result.usage.completion_tokens}`);
       console.log(`   Total tokens: ${result.usage.total_tokens}`);
 
-      if (result.usage.estimated_cost) {
-        console.log(`   Estimated cost: $${result.usage.estimated_cost.toFixed(6)}`);
+      
+      // Check response headers for actual cost information from the gateway
+      if (response.headers.get('x-gateway-cost-usd')) {
+        const actualCost = parseFloat(response.headers.get('x-gateway-cost-usd'));
+        console.log(`   Actual cost: $${actualCost.toFixed(6)}`);
       }
     }
 

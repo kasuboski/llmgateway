@@ -6,9 +6,9 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import * as z from "zod";
 import { authMiddleware } from "../lib/auth";
-import { calculateCostFromUsage, estimateCostFromRequest } from "../lib/costs";
+import { calculateCostFromUsage } from "../lib/costs";
 import {
-  checkHierarchicalQuotaLimit,
+  checkReactiveQuotaLimit,
   getCurrentMonth,
   updateOrganizationQuotaUsage,
   updateQuotaUsage,
@@ -39,8 +39,8 @@ interface User {
 
 interface QuotaCheckResult {
   allowed: boolean;
-  userQuotaRecord: QuotaRecord | null;
-  orgQuotaRecord: QuotaRecord | null;
+  userQuotaRecord: QuotaRecord;
+  orgQuotaRecord: QuotaRecord;
   reason?: string;
 }
 
@@ -132,19 +132,17 @@ async function performQuotaCheck(
   kv: KVNamespace,
   user: User,
   organizationConfig: OrganizationConfig,
-  estimatedCost: number,
 ): Promise<QuotaCheckResult> {
   try {
-    return await checkHierarchicalQuotaLimit(
+    return await checkReactiveQuotaLimit(
       kv,
       user.user_id,
       user.org_id,
-      estimatedCost,
       user.monthly_limit_usd,
       organizationConfig.monthly_budget_usd,
     );
   } catch (error) {
-    console.error("Hierarchical quota check failed:", error);
+    console.error("Quota check failed:", error);
 
     if (organizationConfig.failure_mode === "fail-open") {
       console.log(
@@ -259,10 +257,9 @@ async function makeAiGatewayRequest(
 async function processAiGatewayResponse(
   response: Response,
   model: string,
-  estimatedCost: number,
 ): Promise<{ responseBody: string; actualCost: number }> {
   const responseBody = await response.text();
-  let actualCost = estimatedCost;
+  let actualCost = 0;
 
   if (response.ok) {
     try {
@@ -276,7 +273,7 @@ async function processAiGatewayResponse(
         );
       }
     } catch (_e) {
-      console.warn("Could not parse usage from response, using estimated cost");
+      console.warn("Could not parse usage from response, using zero cost");
     }
   }
 
@@ -380,7 +377,6 @@ chat.post(
       const payload = c.req.valid("json");
       const model = payload.model;
       const requestBodyText = JSON.stringify(payload);
-      const estimatedCost = estimateCostFromRequest(model, payload);
 
       // 2. Get organization config
       const organizationConfig = await getOrganizationConfig(
@@ -417,7 +413,6 @@ chat.post(
           GATEWAY_KV,
           user,
           validatedOrgConfig,
-          estimatedCost,
         );
       } catch (_error) {
         // Handle fail-closed case for quota check failures
@@ -452,25 +447,28 @@ chat.post(
       const { responseBody, actualCost } = await processAiGatewayResponse(
         response,
         model,
-        estimatedCost,
       );
 
-      // 9. Update usage tracking
-      const updatedQuota = await updateUsageTracking(
-        GATEWAY_KV,
-        user,
-        validatedOrgConfig,
-        actualCost,
-      );
-
-      // 10. Return enhanced response
-      return enhanceResponseWithUsageHeaders(
+      // 9. Create response with current quota info
+      const proxyResponse = enhanceResponseWithUsageHeaders(
         response,
         responseBody,
-        updatedQuota,
+        quotaCheckResult.userQuotaRecord,
         user,
         actualCost,
       );
+
+      // 10. Update usage tracking asynchronously
+      c.executionCtx.waitUntil(
+        updateUsageTracking(
+          GATEWAY_KV,
+          user,
+          validatedOrgConfig,
+          actualCost,
+        ),
+      );
+
+      return proxyResponse;
     } catch (error) {
       console.error("AI Gateway proxy error:", error);
       return c.json(
