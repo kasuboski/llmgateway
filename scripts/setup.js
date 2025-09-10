@@ -94,7 +94,7 @@ async function checkSystemHealth() {
     const metrics = await makeRequest(`${endpoint}/admin/metrics`);
     console.log('✅ System is healthy');
     console.log(
-      `📊 Current state: ${metrics.usage.total_users} users, ${metrics.usage.total_organizations} orgs`
+      `📊 Current state: ${metrics.entities.users} users, ${metrics.entities.organizations} orgs`
     );
     return true;
   } catch (error) {

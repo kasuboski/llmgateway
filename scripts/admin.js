@@ -91,39 +91,16 @@ async function getMetrics() {
 
     console.log('\n🎯 System Metrics');
     console.log(`Timestamp: ${metrics.timestamp}`);
-    console.log(`Response Time: ${metrics.system.response_time_ms}ms`);
     console.log('');
 
-    console.log('📈 Usage Overview');
-    console.log(`Current Month: ${metrics.usage.current_month}`);
-    console.log(`Total Users: ${metrics.usage.total_users}`);
-    console.log(`Active Users: ${metrics.usage.active_users}`);
-    console.log(`Total Organizations: ${metrics.usage.total_organizations}`);
-    console.log(`Total Requests: ${metrics.usage.total_requests_this_month}`);
-    console.log(`Total Cost: $${metrics.usage.total_cost_usd_this_month.toFixed(2)}`);
-    console.log('');
-
-    console.log('🔑 API Keys');
-    console.log(`Total: ${metrics.usage.api_keys.total}`);
-    console.log(`Active: ${metrics.usage.api_keys.active}`);
-    console.log(`Revoked: ${metrics.usage.api_keys.revoked}`);
-
-    if (metrics.top_usage.users.length > 0) {
+    console.log('📈 Entity Counts');
+    console.log(`Total Users: ${metrics.entities.users}`);
+    console.log(`Total Organizations: ${metrics.entities.organizations}`);
+    console.log(`Total API Keys: ${metrics.entities.api_keys}`);
+    
+    if (metrics.note) {
       console.log('');
-      console.log('👥 Top Users by Usage');
-      metrics.top_usage.users.slice(0, 5).forEach((user, index) => {
-        console.log(
-          `${index + 1}. ${user.user_id}: $${user.usage_usd.toFixed(2)} (${user.requests} requests)`
-        );
-      });
-    }
-
-    if (metrics.top_usage.organizations.length > 0) {
-      console.log('');
-      console.log('🏢 Top Organizations by Usage');
-      metrics.top_usage.organizations.slice(0, 5).forEach((org, index) => {
-        console.log(`${index + 1}. ${org.org_id}: $${org.usage_usd.toFixed(2)}`);
-      });
+      console.log(`ℹ️  ${metrics.note}`);
     }
   } catch (error) {
     console.error('❌ Failed to get metrics:', error.message);
