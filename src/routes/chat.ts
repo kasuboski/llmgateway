@@ -15,14 +15,7 @@ import {
 } from "../lib/quota";
 import type { OrganizationConfig, QuotaRecord } from "../types";
 
-// Extend the generated CloudflareBindings to include AI binding and secrets
-interface Env extends CloudflareBindings {
-  AI: Ai;
-  AI_GATEWAY_TOKEN: string;
-  ADMIN_API_KEY: string;
-}
-
-const chat = new Hono<{ Bindings: Env }>();
+const chat = new Hono<{ Bindings: CloudflareBindings }>();
 
 // Helper function return types
 interface OrganizationValidationResult {
