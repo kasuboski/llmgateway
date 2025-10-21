@@ -146,8 +146,8 @@ async function testChat() {
       } else if (response.status === 429) {
         console.log('\n🔧 Troubleshooting:');
         console.log('   - You may have exceeded your quota');
-        console.log('   - Check usage: node scripts/admin.js user usage <user_id>');
-        console.log('   - Reset quota: node scripts/admin.js user reset-quota <user_id>');
+        console.log('   - Check usage: node scripts/admin.js vkey usage <key_id>');
+        console.log('   - Reset quota: node scripts/admin.js vkey reset-quota <key_id>');
       }
 
       return;

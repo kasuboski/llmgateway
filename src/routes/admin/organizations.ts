@@ -78,7 +78,7 @@ organizations.post(
 );
 
 organizations.get(
-  "/org_id",
+  "/:org_id",
   zValidator("param", OrgIdParamSchema),
   async (c) => {
     const { GATEWAY_KV } = c.env;

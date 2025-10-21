@@ -51,7 +51,7 @@ async function getAllKvKeys() {
   try {
     const metrics = await makeRequest(`${endpoint}/admin/metrics`);
     console.log(
-      `📊 Found ${metrics.usage.total_users} users, ${metrics.usage.total_organizations} organizations, ${metrics.usage.api_keys.total} API keys`
+      `📊 Found ${metrics.entities.virtual_keys || 0} virtual keys, ${metrics.entities.organizations || 0} organizations`
     );
     return metrics;
   } catch (error) {
@@ -65,9 +65,8 @@ async function getAllKvKeys() {
 
 async function confirmCleanup() {
   console.log('\n⚠️  WARNING: This will delete ALL data from KV storage!');
-  console.log('   - All user configurations and quotas');
+  console.log('   - All virtual key configurations and quotas');
   console.log('   - All organization settings');
-  console.log('   - All API keys');
   console.log('   - All usage data');
 
   // In a real environment, you'd use readline for interactive confirmation
@@ -109,23 +108,18 @@ async function cleanup() {
   console.log('   1. Go to Cloudflare Dashboard > Workers & Pages > KV');
   console.log('   2. Select your GATEWAY_KV namespace');
   console.log('   3. Delete keys matching these patterns:');
-  console.log('      - user:*');
-  console.log('      - apikey:*');
-  console.log('      - org:*');
-  console.log('      - system:*');
+  console.log('      - vkey:*  (virtual key configs and quotas)');
+  console.log('      - org:*   (organization configs and quotas)');
   console.log('');
   console.log('   Or use wrangler CLI:');
   console.log('   wrangler kv:key list --binding GATEWAY_KV');
   console.log('   wrangler kv:key delete --binding GATEWAY_KV "key-name"');
   console.log('');
 
-  if (metrics && (metrics.usage.total_users > 0 || metrics.usage.total_organizations > 0)) {
+  if (metrics && (metrics.entities.virtual_keys !== '0' || metrics.entities.organizations !== '0')) {
     console.log(`📊 Current state before cleanup:`);
-    console.log(`   - Users: ${metrics.usage.total_users}`);
-    console.log(`   - Organizations: ${metrics.usage.total_organizations}`);
-    console.log(`   - API Keys: ${metrics.usage.api_keys.total}`);
-    console.log(`   - Total requests this month: ${metrics.usage.total_requests_this_month}`);
-    console.log(`   - Total cost this month: $${metrics.usage.total_cost_usd_this_month}`);
+    console.log(`   - Virtual Keys: ${metrics.entities.virtual_keys}`);
+    console.log(`   - Organizations: ${metrics.entities.organizations}`);
   }
 
   console.log('\n✅ Cleanup information provided.');
