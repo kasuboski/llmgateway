@@ -30,16 +30,18 @@ interface ProviderValidationResult {
   errorResponse?: Response;
 }
 
-interface User {
-  user_id: string;
+interface VirtualKey {
+  key_id: string;
+  key_hash: string;
   org_id: string;
-  email: string;
+  user?: string;
+  name?: string;
   monthly_limit_usd: number;
 }
 
 interface QuotaCheckResult {
   allowed: boolean;
-  userQuotaRecord: QuotaRecord;
+  keyQuotaRecord: QuotaRecord;
   orgQuotaRecord: QuotaRecord;
   reason?: string;
 }
@@ -64,7 +66,7 @@ async function getOrganizationConfig(
 }
 
 function validateOrganizationExists(
-  user: User,
+  vkey: VirtualKey,
   organizationConfig: OrganizationConfig | null,
 ): OrganizationValidationResult {
   if (!organizationConfig) {
@@ -73,7 +75,7 @@ function validateOrganizationExists(
       errorResponse: Response.json(
         {
           error: {
-            message: user.org_id
+            message: vkey.org_id
               ? "Organization configuration not found"
               : "Organization ID required - all requests must be associated with an organization",
             type: "organization_error",
@@ -130,15 +132,15 @@ function validateProviderAndApiKey(
 
 async function performQuotaCheck(
   kv: KVNamespace,
-  user: User,
+  vkey: VirtualKey,
   organizationConfig: OrganizationConfig,
 ): Promise<QuotaCheckResult> {
   try {
     return await checkReactiveQuotaLimit(
       kv,
-      user.user_id,
-      user.org_id,
-      user.monthly_limit_usd,
+      vkey.key_hash,
+      vkey.org_id,
+      vkey.monthly_limit_usd,
       organizationConfig.monthly_budget_usd,
     );
   } catch (error) {
@@ -146,12 +148,12 @@ async function performQuotaCheck(
 
     if (organizationConfig.failure_mode === "fail-open") {
       console.log(
-        `Fail-open mode: allowing request without quota check for user ${user.user_id}`,
+        `Fail-open mode: allowing request without quota check for key ${vkey.key_id}`,
       );
 
       return {
         allowed: true,
-        userQuotaRecord: {
+        keyQuotaRecord: {
           month_usage_usd: 0,
           current_month: getCurrentMonth(),
           request_count: 0,
@@ -172,23 +174,23 @@ async function performQuotaCheck(
 
 function handleQuotaFailure(
   quotaCheckResult: QuotaCheckResult,
-  user: User,
+  vkey: VirtualKey,
   organizationConfig: OrganizationConfig,
 ): Response {
-  if (quotaCheckResult.reason === "user_quota_exceeded") {
+  if (quotaCheckResult.reason === "key_quota_exceeded") {
     const remainingUsd =
-      user.monthly_limit_usd -
-      quotaCheckResult.userQuotaRecord!.month_usage_usd;
+      vkey.monthly_limit_usd -
+      quotaCheckResult.keyQuotaRecord!.month_usage_usd;
     return Response.json(
       {
         error: {
-          message: `User monthly quota exceeded. Used: $${quotaCheckResult.userQuotaRecord!.month_usage_usd.toFixed(4)}, Limit: $${user.monthly_limit_usd}, Remaining: $${remainingUsd.toFixed(4)}`,
-          type: "user_quota_exceeded",
+          message: `Virtual key monthly quota exceeded. Used: $${quotaCheckResult.keyQuotaRecord!.month_usage_usd.toFixed(4)}, Limit: $${vkey.monthly_limit_usd}, Remaining: $${remainingUsd.toFixed(4)}`,
+          type: "key_quota_exceeded",
           details: {
-            usage_usd: quotaCheckResult.userQuotaRecord!.month_usage_usd,
-            limit_usd: user.monthly_limit_usd,
+            usage_usd: quotaCheckResult.keyQuotaRecord!.month_usage_usd,
+            limit_usd: vkey.monthly_limit_usd,
             remaining_usd: remainingUsd,
-            current_month: quotaCheckResult.userQuotaRecord!.current_month,
+            current_month: quotaCheckResult.keyQuotaRecord!.current_month,
           },
         },
       },
@@ -231,7 +233,7 @@ async function makeAiGatewayRequest(
   aiGatewayUrl: string,
   providerApiKey: string,
   gatewayToken: string,
-  user: User,
+  vkey: VirtualKey,
   model: string,
   requestBody: string,
 ): Promise<Response> {
@@ -244,9 +246,9 @@ async function makeAiGatewayRequest(
         "cf-aig-authorization": `Bearer ${gatewayToken}`,
       }),
       "cf-aig-metadata": JSON.stringify({
-        user_id: user.user_id,
-        org_id: user.org_id,
-        email: user.email,
+        key_id: vkey.key_id,
+        org_id: vkey.org_id,
+        user: vkey.user,
         model: model,
       }),
     },
@@ -282,13 +284,13 @@ async function processAiGatewayResponse(
 
 async function updateUsageTracking(
   kv: KVNamespace,
-  user: User,
+  vkey: VirtualKey,
   _organizationConfig: OrganizationConfig,
   actualCost: number,
 ): Promise<QuotaRecord> {
   try {
-    const updatedQuota = await updateQuotaUsage(kv, user.user_id, actualCost);
-    await updateOrganizationQuotaUsage(kv, user.org_id, actualCost);
+    const updatedQuota = await updateQuotaUsage(kv, vkey.key_hash, actualCost);
+    await updateOrganizationQuotaUsage(kv, vkey.org_id, actualCost);
 
     return updatedQuota;
   } catch (error) {
@@ -309,7 +311,7 @@ function enhanceResponseWithUsageHeaders(
   response: Response,
   responseBody: string,
   quotaRecord: QuotaRecord,
-  user: User,
+  vkey: VirtualKey,
   actualCost: number,
 ): Response {
   const proxyResponse = new Response(responseBody, {
@@ -324,11 +326,11 @@ function enhanceResponseWithUsageHeaders(
   );
   proxyResponse.headers.set(
     "x-gateway-limit-usd",
-    user.monthly_limit_usd.toString(),
+    vkey.monthly_limit_usd.toString(),
   );
   proxyResponse.headers.set(
     "x-gateway-remaining-usd",
-    (user.monthly_limit_usd - quotaRecord.month_usage_usd).toFixed(4),
+    (vkey.monthly_limit_usd - quotaRecord.month_usage_usd).toFixed(4),
   );
   proxyResponse.headers.set(
     "x-gateway-request-count",
@@ -370,7 +372,7 @@ chat.post(
       AI_GATEWAY_TOKEN,
       GATEWAY_KV,
     } = c.env;
-    const user = c.get("user");
+    const vkey = c.get("vkey");
 
     try {
       // 1. Parse and validate request
@@ -381,12 +383,12 @@ chat.post(
       // 2. Get organization config
       const organizationConfig = await getOrganizationConfig(
         GATEWAY_KV,
-        user.org_id,
+        vkey.org_id,
       );
 
       // 3. Early validation for organization existence
       const orgValidation = validateOrganizationExists(
-        user,
+        vkey,
         organizationConfig,
       );
       if (!orgValidation.shouldProceed) {
@@ -400,7 +402,7 @@ chat.post(
       const providerValidation = validateProviderAndApiKey(
         model,
         validatedOrgConfig,
-        user.org_id,
+        vkey.org_id,
       );
       if (!providerValidation.isValid) {
         return providerValidation.errorResponse!;
@@ -411,7 +413,7 @@ chat.post(
       try {
         quotaCheckResult = await performQuotaCheck(
           GATEWAY_KV,
-          user,
+          vkey,
           validatedOrgConfig,
         );
       } catch (_error) {
@@ -429,7 +431,7 @@ chat.post(
 
       // 6. Handle quota failures
       if (!quotaCheckResult.allowed) {
-        return handleQuotaFailure(quotaCheckResult, user, validatedOrgConfig);
+        return handleQuotaFailure(quotaCheckResult, vkey, validatedOrgConfig);
       }
 
       // 7. Make AI Gateway request
@@ -438,7 +440,7 @@ chat.post(
         aiGatewayUrl,
         providerValidation.apiKey!,
         AI_GATEWAY_TOKEN,
-        user,
+        vkey,
         model,
         requestBodyText,
       );
@@ -453,8 +455,8 @@ chat.post(
       const proxyResponse = enhanceResponseWithUsageHeaders(
         response,
         responseBody,
-        quotaCheckResult.userQuotaRecord,
-        user,
+        quotaCheckResult.keyQuotaRecord,
+        vkey,
         actualCost,
       );
 
@@ -462,7 +464,7 @@ chat.post(
       c.executionCtx.waitUntil(
         updateUsageTracking(
           GATEWAY_KV,
-          user,
+          vkey,
           validatedOrgConfig,
           actualCost,
         ),

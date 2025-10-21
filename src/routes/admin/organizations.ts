@@ -1,7 +1,7 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import * as z from "zod";
-import type { OrganizationConfig, UserConfig } from "../../types";
+import type { OrganizationConfig, VirtualKeyConfig } from "../../types";
 import { getOrganizationQuotaRecord } from "../../lib/quota";
 
 const organizations = new Hono<{ Bindings: CloudflareBindings }>();
@@ -166,7 +166,7 @@ organizations.patch(
 );
 
 organizations.get(
-  "/:org_id/users",
+  "/:org_id/vkeys",
   zValidator("param", OrgIdParamSchema),
   async (c) => {
     const { GATEWAY_KV } = c.env;
@@ -184,31 +184,41 @@ organizations.get(
         );
       }
 
-      const { keys } = await GATEWAY_KV.list({ prefix: "user:" });
-      const userConfigs = [];
+      // List all virtual key configs
+      const { keys } = await GATEWAY_KV.list({ prefix: "vkey:" });
+      const vkeyConfigs = [];
 
       for (const key of keys) {
         if (key.name.endsWith(":config")) {
-          const userConfig = (await GATEWAY_KV.get(
+          const vkeyConfig = (await GATEWAY_KV.get(
             key.name,
             "json",
-          )) as UserConfig | null;
-          if (userConfig && userConfig.org_id === orgId) {
-            userConfigs.push(userConfig);
+          )) as VirtualKeyConfig | null;
+          if (vkeyConfig && vkeyConfig.org_id === orgId) {
+            // Return config without sensitive key_hash
+            vkeyConfigs.push({
+              key_id: vkeyConfig.key_id,
+              org_id: vkeyConfig.org_id,
+              user: vkeyConfig.user,
+              name: vkeyConfig.name,
+              monthly_limit_usd: vkeyConfig.monthly_limit_usd,
+              status: vkeyConfig.status,
+              created_at: vkeyConfig.created_at,
+            });
           }
         }
       }
 
       return c.json({
         organization_id: orgId,
-        users: userConfigs,
+        virtual_keys: vkeyConfigs,
       });
     } catch (error) {
-      console.error("Get organization users error:", error);
+      console.error("Get organization virtual keys error:", error);
       return c.json(
         {
           error: {
-            message: "Failed to get organization users",
+            message: "Failed to get organization virtual keys",
             type: "server_error",
           },
         },

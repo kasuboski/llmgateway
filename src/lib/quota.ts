@@ -1,5 +1,5 @@
 /**
- * Quota management utilities for users and organizations
+ * Quota management utilities for virtual keys and organizations
  */
 
 import type { QuotaRecord } from '../types';
@@ -9,9 +9,9 @@ export function getCurrentMonth(): string {
   return `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`;
 }
 
-export async function getQuotaRecord(kv: KVNamespace, userId: string): Promise<QuotaRecord> {
+export async function getQuotaRecord(kv: KVNamespace, keyHash: string): Promise<QuotaRecord> {
   const currentMonth = getCurrentMonth();
-  const quotaRecord = (await kv.get(`user:${userId}:quota`, 'json')) as QuotaRecord | null;
+  const quotaRecord = (await kv.get(`vkey:${keyHash}:quota`, 'json')) as QuotaRecord | null;
 
   // If no quota record exists or it's from a previous month, create/reset it
   if (!quotaRecord || quotaRecord.current_month !== currentMonth) {
@@ -21,7 +21,7 @@ export async function getQuotaRecord(kv: KVNamespace, userId: string): Promise<Q
       request_count: 0,
       last_update: Date.now(),
     };
-    await kv.put(`user:${userId}:quota`, JSON.stringify(newQuotaRecord));
+    await kv.put(`vkey:${keyHash}:quota`, JSON.stringify(newQuotaRecord));
     return newQuotaRecord;
   }
 
@@ -30,26 +30,26 @@ export async function getQuotaRecord(kv: KVNamespace, userId: string): Promise<Q
 
 export async function updateQuotaUsage(
   kv: KVNamespace,
-  userId: string,
+  keyHash: string,
   costUsd: number
 ): Promise<QuotaRecord> {
-  const quotaRecord = await getQuotaRecord(kv, userId);
+  const quotaRecord = await getQuotaRecord(kv, keyHash);
 
   quotaRecord.month_usage_usd += costUsd;
   quotaRecord.request_count += 1;
   quotaRecord.last_update = Date.now();
 
-  await kv.put(`user:${userId}:quota`, JSON.stringify(quotaRecord));
+  await kv.put(`vkey:${keyHash}:quota`, JSON.stringify(quotaRecord));
   return quotaRecord;
 }
 
 export async function checkQuotaLimit(
   kv: KVNamespace,
-  userId: string,
+  keyHash: string,
   estimatedCostUsd: number,
   monthlyLimitUsd: number
 ): Promise<{ allowed: boolean; quotaRecord: QuotaRecord }> {
-  const quotaRecord = await getQuotaRecord(kv, userId);
+  const quotaRecord = await getQuotaRecord(kv, keyHash);
 
   const projectedUsage = quotaRecord.month_usage_usd + estimatedCostUsd;
   const allowed = projectedUsage <= monthlyLimitUsd;
@@ -96,27 +96,27 @@ export async function updateOrganizationQuotaUsage(
 
 export async function checkReactiveQuotaLimit(
   kv: KVNamespace,
-  userId: string,
+  keyHash: string,
   orgId: string,
-  userMonthlyLimitUsd: number,
+  keyMonthlyLimitUsd: number,
   orgMonthlyBudgetUsd: number
 ): Promise<{
   allowed: boolean;
-  userQuotaRecord: QuotaRecord;
+  keyQuotaRecord: QuotaRecord;
   orgQuotaRecord: QuotaRecord;
   reason?: string;
 }> {
   // Get current usage records
-  const userQuotaRecord = await getQuotaRecord(kv, userId);
+  const keyQuotaRecord = await getQuotaRecord(kv, keyHash);
   const orgQuotaRecord = await getOrganizationQuotaRecord(kv, orgId);
 
-  // User quota check - only check actual current usage
-  if (userQuotaRecord.month_usage_usd >= userMonthlyLimitUsd) {
+  // Virtual key quota check - only check actual current usage
+  if (keyQuotaRecord.month_usage_usd >= keyMonthlyLimitUsd) {
     return {
       allowed: false,
-      userQuotaRecord,
+      keyQuotaRecord,
       orgQuotaRecord,
-      reason: 'user_quota_exceeded',
+      reason: 'key_quota_exceeded',
     };
   }
 
@@ -124,7 +124,7 @@ export async function checkReactiveQuotaLimit(
   if (orgQuotaRecord.month_usage_usd >= orgMonthlyBudgetUsd) {
     return {
       allowed: false,
-      userQuotaRecord,
+      keyQuotaRecord,
       orgQuotaRecord,
       reason: 'organization_quota_exceeded',
     };
@@ -132,7 +132,7 @@ export async function checkReactiveQuotaLimit(
 
   return {
     allowed: true,
-    userQuotaRecord,
+    keyQuotaRecord,
     orgQuotaRecord,
   };
 }

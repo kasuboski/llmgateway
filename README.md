@@ -1,16 +1,16 @@
-# AI Gateway - KV-Only Multi-User AI Proxy
+# AI Gateway - KV-Only Virtual Key AI Proxy
 
-A production-ready Cloudflare Workers-based AI Gateway that provides multi-user AI request management with quota enforcement, API key management, and global edge performance through KV-only storage architecture.
+A production-ready Cloudflare Workers-based AI Gateway that provides virtual key-based AI request management with quota enforcement, API key management, and global edge performance through KV-only storage architecture.
 
 ## 🚀 Features
 
 - **Global Edge Performance**: 2-5ms authentication worldwide via Cloudflare KV storage
-- **Multi-User Management**: Complete user and organization management with quotas
-- **API Key Management**: Secure API key generation, authentication, and revocation
-- **Quota Enforcement**: Real-time usage tracking with automatic monthly resets
+- **Virtual Key Management**: API keys act as primary entities with built-in quota and configuration
+- **User Linkage**: Optional user field for grouping keys and analytics rollup
+- **Quota Enforcement**: Real-time usage tracking per virtual key with automatic monthly resets
 - **Failure Modes**: Organization-level fail-open or fail-closed behavior
 - **OpenAI Compatible**: Drop-in replacement for OpenAI API endpoints
-- **Manual Control Plane**: Ready-to-use scripts for immediate operations
+- **Simplified Architecture**: Direct key-to-config lookup without user indirection
 
 ## 📋 Quick Start
 
@@ -47,198 +47,51 @@ pnpm run dev
 
 The server will be available at `http://localhost:8787`
 
-## 🛠️ Management Scripts
-
-The AI Gateway includes comprehensive management scripts for all operations:
-
-### Setup & Cleanup
-
-#### Initialize Demo Environment
-```bash
-# Create demo organizations and users with API keys
-node scripts/setup.js
-
-# For production
-node scripts/setup.js --prod
-```
-
-This creates:
-- 2 demo organizations (Demo Corporation, Test Organization)
-- 3 demo users with different quota limits
-- API keys for immediate testing
-
-#### Clean Environment
-```bash
-# Show cleanup instructions (safe)
-node scripts/cleanup.js
-
-# Show cleanup with confirmation
-node scripts/cleanup.js --confirm
-```
-
-### User & Organization Management
-
-#### System Metrics
-```bash
-# View system-wide metrics and usage
-node scripts/admin.js metrics
-```
-
-#### Organization Operations
-```bash
-# Create organization
-node scripts/admin.js org create "My Company" 1000
-
-# Get organization details
-node scripts/admin.js org get org_123
-
-# View organization usage
-node scripts/admin.js org usage org_123
-
-# List organization users
-node scripts/admin.js org users org_123
-```
-
-#### User Operations
-```bash
-# Create user
-node scripts/admin.js user create user@company.com org_123 200
-
-# Get user details
-node scripts/admin.js user get user_456
-
-# View user usage and quota
-node scripts/admin.js user usage user_456
-
-# Reset user quota (emergency)
-node scripts/admin.js user reset-quota user_456
-
-# Delete user
-node scripts/admin.js user delete user_456
-```
-
-#### API Key Management
-```bash
-# Generate new API key for user
-node scripts/admin.js apikey create user_456
-
-# Note: API key listing and revocation require direct KV access
-# Use Cloudflare Dashboard or wrangler CLI for advanced operations
-```
-
-### Testing the Gateway
-
-#### Chat Completions Test
-```bash
-# Basic test with demo API key
-node scripts/chat.js "Hello, world!"
-
-# Test with specific API key
-node scripts/chat.js --api-key "gw_live_xyz123" "What is AI?"
-
-# Test with different model
-node scripts/chat.js --model "openai/gpt-4" "Explain quantum computing"
-
-# Test with streaming response
-node scripts/chat.js --stream "Tell me a story"
-
-# Interactive chat mode
-node scripts/chat.js --interactive
-
-# Production testing
-node scripts/chat.js --prod --api-key "your_prod_key" "Test message"
-```
-
 ## 🏗️ Architecture Overview
 
 ### Core Components
 
 1. **Proxy Worker** (`src/index.ts`, `src/routes/chat.ts`)
    - OpenAI-compatible API endpoints
-   - Real-time quota enforcement
+   - Real-time quota enforcement per virtual key
    - Authentication and usage tracking
    - Global edge performance
 
-2. **Admin API** (`src/routes/admin.ts`)
-   - User and organization management
-   - API key generation and revocation
+2. **Admin API** (`src/routes/admin.ts`, `src/routes/admin/vkeys.ts`)
+   - Virtual key management
+   - Organization management
    - Usage monitoring and metrics
    - System health checks
 
 3. **KV Storage Architecture**
    ```
-   user:{user_id}:config    → User configuration and limits
-   user:{user_id}:quota     → Monthly usage tracking
-   apikey:{hash}            → API key authentication lookup
-   org:{org_id}:config      → Organization settings
+   vkey:{key_hash}:config   → Virtual key configuration, limits, and metadata
+   vkey:{key_hash}:quota    → Monthly usage tracking per key
+   vkey:id:{key_id}         → Index for key_id lookups
+   org:{org_id}:config      → Organization settings and provider keys
    org:{org_id}:quota       → Organization usage tracking
    ```
+
+### Virtual Key Model
+
+Virtual keys are the primary entities in this system. Each virtual key:
+- Has its own monthly quota and configuration
+- Belongs to an organization
+- Optionally links to a user identifier for grouping/analytics
+- Acts as both authentication token and usage tracking entity
+
+**Benefits:**
+- Simpler authentication (1 KV lookup instead of 2)
+- Better performance (2-3ms faster per request)
+- More flexible user management (user is just a string field)
+- Easier analytics rollup via Cloudflare Analytics API
 
 ### Data Flow
 
 ```
-User Request → Authentication → Quota Check → AI Gateway → AI Provider
-                ↓                    ↓
-           KV Lookup          Usage Tracking
-```
-
-## 📊 Typical Workflow
-
-### 1. Initial Setup
-```bash
-# Start development environment (uses .env file)
-pnpm run dev
-
-# Initialize with demo data
-node scripts/setup.js
-
-# Check system status
-node scripts/admin.js metrics
-```
-
-### 2. Production Deployment
-```bash
-# Deploy to Cloudflare Workers
-pnpm run deploy
-
-# Setup production environment
-node scripts/setup.js --prod
-
-# Verify production metrics
-node scripts/admin.js metrics --prod
-```
-
-### 3. Daily Operations
-```bash
-# Monitor system health
-node scripts/admin.js metrics
-
-# Check user usage
-node scripts/admin.js user usage user_456
-
-# Create new user
-node scripts/admin.js user create newuser@company.com org_123 100
-
-# Test API functionality
-node scripts/chat.js --api-key "user_api_key" "Test message"
-```
-
-### 4. User Management Lifecycle
-```bash
-# 1. Create organization
-node scripts/admin.js org create "New Client" 5000
-
-# 2. Create user in organization
-node scripts/admin.js user create admin@newclient.com org_new_id 500
-
-# 3. User tests with provided API key
-node scripts/chat.js --api-key "generated_key" "Hello"
-
-# 4. Monitor usage
-node scripts/admin.js user usage user_new_id
-
-# 5. Adjust limits as needed (requires direct API call - not implemented in script)
-# For now, delete and recreate user with new limits if needed
+API Request → Auth (vkey lookup) → Quota Check → AI Gateway → AI Provider
+                ↓                       ↓
+           KV Lookup (vkey)      Usage Tracking (vkey + org)
 ```
 
 ## 🔧 Configuration
@@ -253,53 +106,284 @@ node scripts/admin.js user usage user_new_id
 
 Organizations can configure how the system behaves during outages:
 
-- **fail-open**: Allow requests when quota data unavailable (with temporary limits)
+- **fail-open**: Allow requests when quota data unavailable
 - **fail-closed**: Reject requests when quota data unavailable
 
-## 📈 Monitoring & Metrics
+## 📚 API Reference
 
-The system provides comprehensive metrics through the admin API:
+### Admin API Endpoints
 
-- **System Health**: Response times, uptime status
-- **Usage Statistics**: Total users, organizations, requests, costs
-- **Top Users**: Highest usage by cost and request volume
-- **API Key Status**: Active, revoked, and total key counts
+#### System Metrics
+- `GET /admin/metrics` - System-wide metrics (virtual key counts, org counts)
+  - Query param: `?mode=exact` for precise counts (slower)
 
-Access metrics with:
+#### Organization Management
+- `POST /admin/organizations` - Create organization
+  ```json
+  {
+    "name": "My Company",
+    "monthly_budget_usd": 1000,
+    "failure_mode": "fail-closed",
+    "provider_keys": {
+      "openai": "sk-...",
+      "anthropic": "sk-ant-..."
+    }
+  }
+  ```
+
+- `GET /admin/organizations/{org_id}` - Get organization details
+- `PATCH /admin/organizations/{org_id}` - Update organization
+- `GET /admin/organizations/{org_id}/usage` - Get organization usage
+- `GET /admin/organizations/{org_id}/vkeys` - List all virtual keys for organization
+
+#### Virtual Key Management
+- `POST /admin/vkeys` - Create virtual key
+  ```json
+  {
+    "org_id": "org_123",
+    "user": "alice@company.com",  // Optional
+    "name": "Alice's Production Key",  // Optional
+    "monthly_limit_usd": 100
+  }
+  ```
+  Returns the API key (shown only once)
+
+- `GET /admin/vkeys/{key_id}` - Get virtual key details
+- `PATCH /admin/vkeys/{key_id}` - Update virtual key
+  ```json
+  {
+    "name": "Updated Key Name",
+    "monthly_limit_usd": 200,
+    "status": "active",  // or "revoked"
+    "user": "bob@company.com"
+  }
+  ```
+
+- `DELETE /admin/vkeys/{key_id}` - Delete virtual key
+- `GET /admin/vkeys/{key_id}/usage` - Get key usage
+  ```json
+  {
+    "key_id": "vkey_123",
+    "name": "Alice's Key",
+    "user": "alice@company.com",
+    "usage": {
+      "current_month": "2025-01",
+      "usage_usd": 45.23,
+      "limit_usd": 100,
+      "remaining_usd": 54.77,
+      "request_count": 1523,
+      "last_update": "2025-01-15T10:30:00Z"
+    }
+  }
+  ```
+
+- `POST /admin/vkeys/{key_id}/reset-quota` - Emergency quota reset
+
+### Chat API Endpoints
+- `POST /v1/chat/completions` - OpenAI-compatible chat completions
+  - Uses virtual key from `Authorization: Bearer gw_live_...` header
+  - Returns usage headers:
+    - `x-gateway-usage-usd`: Current month usage
+    - `x-gateway-limit-usd`: Monthly limit
+    - `x-gateway-remaining-usd`: Remaining budget
+    - `x-gateway-request-count`: Request count
+    - `x-gateway-current-month`: Current month
+    - `x-gateway-cost-usd`: This request's cost
+
+## 💡 Usage Examples
+
+### 1. Create Organization and Virtual Keys
+
 ```bash
-node scripts/admin.js metrics
+# Create organization
+curl -X POST https://your-worker.workers.dev/admin/organizations \
+  -H "Authorization: Bearer ${ADMIN_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Acme Corp",
+    "monthly_budget_usd": 5000,
+    "failure_mode": "fail-closed",
+    "provider_keys": {
+      "openai": "sk-...",
+      "anthropic": "sk-ant-..."
+    }
+  }'
+
+# Create virtual key for Alice
+curl -X POST https://your-worker.workers.dev/admin/vkeys \
+  -H "Authorization: Bearer ${ADMIN_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "org_id": "org_1234567890_abc123",
+    "user": "alice@acme.com",
+    "name": "Alice Production Key",
+    "monthly_limit_usd": 500
+  }'
+# Save the returned api_key!
+
+# Create virtual key for Bob
+curl -X POST https://your-worker.workers.dev/admin/vkeys \
+  -H "Authorization: Bearer ${ADMIN_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "org_id": "org_1234567890_abc123",
+    "user": "bob@acme.com",
+    "name": "Bob Development Key",
+    "monthly_limit_usd": 100
+  }'
 ```
+
+### 2. Make AI Requests
+
+```bash
+# Make chat completion request
+curl -X POST https://your-worker.workers.dev/v1/chat/completions \
+  -H "Authorization: Bearer gw_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai/gpt-4o-mini",
+    "messages": [
+      {"role": "user", "content": "Hello!"}
+    ]
+  }'
+```
+
+### 3. Monitor Usage
+
+```bash
+# Check virtual key usage
+curl https://your-worker.workers.dev/admin/vkeys/vkey_123/usage \
+  -H "Authorization: Bearer ${ADMIN_API_KEY}"
+
+# Check organization usage
+curl https://your-worker.workers.dev/admin/organizations/org_123/usage \
+  -H "Authorization: Bearer ${ADMIN_API_KEY}"
+
+# System metrics
+curl https://your-worker.workers.dev/admin/metrics \
+  -H "Authorization: Bearer ${ADMIN_API_KEY}"
+```
+
+### 4. Key Management
+
+```bash
+# Update key limit
+curl -X PATCH https://your-worker.workers.dev/admin/vkeys/vkey_123 \
+  -H "Authorization: Bearer ${ADMIN_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"monthly_limit_usd": 1000}'
+
+# Revoke key
+curl -X PATCH https://your-worker.workers.dev/admin/vkeys/vkey_123 \
+  -H "Authorization: Bearer ${ADMIN_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{"status": "revoked"}'
+
+# Delete key
+curl -X DELETE https://your-worker.workers.dev/admin/vkeys/vkey_123 \
+  -H "Authorization: Bearer ${ADMIN_API_KEY}"
+```
+
+## 📊 User Analytics and Rollup
+
+While virtual keys are the primary tracking entity, the optional `user` field enables analytics:
+
+### Via Cloudflare Analytics API
+Use Cloudflare's Analytics API to query aggregated metrics by user:
+- Filter by `cf-aig-metadata.user` to see all requests for a user
+- Roll up costs and usage across multiple keys per user
+- Build custom dashboards and reports
+
+### Via KV Queries (Optional)
+For real-time rollup, you can:
+1. List all keys: `GET /admin/vkeys?user=alice@company.com`
+2. Query usage for each key
+3. Aggregate usage client-side
+
+This approach keeps the gateway fast while enabling flexible analytics.
 
 ## 🔒 Security Features
 
 - **Hashed API Keys**: SHA-256 hashing for secure storage
 - **Admin Authentication**: Separate admin API key for management operations
-- **Quota Enforcement**: Prevent runaway costs with user and organization limits
-- **Audit Trail**: Usage tracking for compliance and monitoring
+- **Quota Enforcement**: Prevent runaway costs with per-key and organization limits
+- **Key Revocation**: Instantly disable keys without data deletion
+- **Audit Trail**: Usage tracking for compliance and monitoring via Cloudflare Analytics
 
 ## 🚀 Production Deployment
 
 ### Cloudflare Workers Setup
 1. Configure `wrangler.jsonc` with your account details
 2. Set up KV namespace bindings
-3. Configure environment variables
+3. Configure environment variables (secrets)
 4. Deploy with `pnpm run deploy`
 
 ### AI Gateway Configuration
 1. Create AI Gateway in Cloudflare Dashboard
-2. Configure provider connections (OpenAI, etc.)
+2. Configure provider connections (OpenAI, Anthropic, etc.)
 3. Set up authentication tokens
-4. Update environment variables
+4. Update environment variables in organization configs
 
-## 📚 API Reference
+## 🏗️ File Structure
 
-### Admin API Endpoints
-- `GET /admin/metrics` - System metrics and usage
-- `POST /admin/organizations` - Create organization
-- `GET /admin/organizations/{id}` - Get organization
-- `POST /admin/users` - Create user
-- `GET /admin/users/{id}` - Get user details
-- `GET /admin/users/{id}/usage` - Get user usage
+```
+src/
+├── index.ts                    # Main application entry point
+├── types.ts                    # TypeScript type definitions
+├── hono-context.d.ts          # Hono context augmentation
+├── lib/
+│   ├── auth.ts                # Authentication middleware
+│   ├── crypto.ts              # API key generation & hashing
+│   ├── quota.ts               # Quota management
+│   ├── costs.ts               # AI model cost calculation
+│   └── errors.ts              # Error handling
+└── routes/
+    ├── admin.ts               # Admin router
+    ├── chat.ts                # Chat completions proxy
+    └── admin/
+        ├── vkeys.ts           # Virtual key management
+        └── organizations.ts   # Organization management
+```
 
-### Chat API Endpoints
-- `POST /v1/chat/completions` - OpenAI-compatible chat completions
+## 📝 Development
+
+```bash
+# Install dependencies
+pnpm install
+
+# Start development server
+pnpm dev
+
+# Generate TypeScript types
+pnpm cf-typegen
+
+# Deploy to production
+pnpm deploy
+```
+
+## 🧪 Testing
+
+```bash
+# Health check
+curl http://localhost:8787/health
+
+# Test chat completion
+curl -X POST http://localhost:8787/v1/chat/completions \
+  -H "Authorization: Bearer gw_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai/gpt-4o-mini",
+    "messages": [{"role": "user", "content": "test"}]
+  }'
+```
+
+## 📖 Further Reading
+
+- See `CLAUDE.md` for development guidelines and architecture details
+- Cloudflare Workers documentation: https://developers.cloudflare.com/workers/
+- Cloudflare KV documentation: https://developers.cloudflare.com/kv/
+- Cloudflare AI Gateway: https://developers.cloudflare.com/ai-gateway/
+
+## 📄 License
+
+[Your License Here]

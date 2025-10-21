@@ -3,7 +3,7 @@
  */
 
 import { createMiddleware } from 'hono/factory';
-import type { ApiKeyRecord, UserConfig } from '../types';
+import type { VirtualKeyConfig } from '../types';
 import { generateRequestId, hashApiKey } from './crypto';
 import { createErrorResponse } from './errors';
 
@@ -54,38 +54,23 @@ export const authMiddleware = createMiddleware<{ Bindings: Env }>(async (c, next
   }
 
   try {
-    // Hash the API key and look it up in KV
+    // Hash the API key and look up the virtual key config directly
     const keyHash = await hashApiKey(token);
-    const apiKeyRecord = (await c.env.GATEWAY_KV.get(
-      `apikey:${keyHash}`,
+    const vkeyConfig = (await c.env.GATEWAY_KV.get(
+      `vkey:${keyHash}:config`,
       'json'
-    )) as ApiKeyRecord | null;
+    )) as VirtualKeyConfig | null;
 
-    if (!apiKeyRecord) {
+    if (!vkeyConfig) {
       return c.json({ error: { message: 'Invalid API key', type: 'auth_error' } }, 401);
     }
 
-    if (apiKeyRecord.status !== 'active') {
+    if (vkeyConfig.status !== 'active') {
       return c.json({ error: { message: 'API key revoked', type: 'auth_error' } }, 401);
     }
 
-    // Get user config
-    const userConfig = (await c.env.GATEWAY_KV.get(
-      `user:${apiKeyRecord.user_id}:config`,
-      'json'
-    )) as UserConfig | null;
-
-    if (!userConfig) {
-      return c.json({ error: { message: 'User not found', type: 'auth_error' } }, 401);
-    }
-
-    if (userConfig.status !== 'active') {
-      return c.json({ error: { message: 'User suspended', type: 'auth_error' } }, 401);
-    }
-
-    // Set user context for the request
-    c.set('user', userConfig);
-    c.set('apiKey', apiKeyRecord);
+    // Set virtual key context for the request
+    c.set('vkey', vkeyConfig);
 
     await next();
   } catch (error) {
