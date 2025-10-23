@@ -4,6 +4,7 @@
 
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
+import { describeRoute } from "hono-openapi";
 import * as z from "zod";
 import { authMiddleware } from "../lib/auth";
 import { calculateCostFromUsage } from "../lib/costs";
@@ -413,6 +414,153 @@ const ChatCompletionsSchema = z.object({
 // OpenAI-compatible chat completions proxy with quota enforcement
 chat.post(
   "/chat/completions",
+  describeRoute({
+    description:
+      "OpenAI-compatible chat completions with three-level quota enforcement",
+    tags: ["Chat"],
+    security: [{ BearerAuth: [] }],
+    requestBody: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+            required: ["model", "messages"],
+            properties: {
+              model: {
+                type: "string",
+                description:
+                  'Model in format "provider/model". Examples: "openai/gpt-4o-mini", "anthropic/claude-3-haiku"',
+                example: "openai/gpt-4o-mini",
+              },
+              messages: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    role: {
+                      type: "string",
+                      enum: ["system", "user", "assistant"],
+                    },
+                    content: { type: "string" },
+                  },
+                },
+              },
+              max_tokens: {
+                type: "integer",
+                description: "Maximum tokens to generate",
+              },
+            },
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Successful chat completion response",
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              properties: {
+                id: { type: "string" },
+                object: { type: "string" },
+                created: { type: "number" },
+                model: { type: "string" },
+                choices: { type: "array", items: {} },
+                usage: {
+                  type: "object",
+                  properties: {
+                    prompt_tokens: { type: "number" },
+                    completion_tokens: { type: "number" },
+                    total_tokens: { type: "number" },
+                  },
+                },
+              },
+            },
+          },
+        },
+        headers: {
+          "x-gateway-usage-usd": {
+            schema: { type: "string" },
+            description: "Current monthly usage in USD",
+          },
+          "x-gateway-limit-usd": {
+            schema: { type: "string" },
+            description: "Monthly quota limit in USD",
+          },
+          "x-gateway-remaining-usd": {
+            schema: { type: "string" },
+            description: "Remaining quota in USD",
+          },
+          "x-gateway-cost-usd": {
+            schema: { type: "string" },
+            description: "Cost of this request in USD",
+          },
+        },
+      },
+      401: {
+        description: "Authentication failed or provider key missing",
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              properties: {
+                error: {
+                  type: "object",
+                  properties: {
+                    message: { type: "string" },
+                    type: { type: "string" },
+                    details: {},
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      429: {
+        description: "Quota exceeded (virtual key, user, or organization)",
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              properties: {
+                error: {
+                  type: "object",
+                  properties: {
+                    message: { type: "string" },
+                    type: { type: "string" },
+                    details: {},
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      503: {
+        description: "Service error or configuration issue",
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              properties: {
+                error: {
+                  type: "object",
+                  properties: {
+                    message: { type: "string" },
+                    type: { type: "string" },
+                    details: {},
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  }),
   authMiddleware,
   zValidator("json", ChatCompletionsSchema),
   async (c) => {

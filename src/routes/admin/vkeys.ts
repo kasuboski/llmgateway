@@ -1,5 +1,6 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
+import { describeRoute } from "hono-openapi";
 import * as z from "zod";
 import { generateApiKey, hashApiKey } from "../../lib/crypto";
 import { getCurrentMonth, getQuotaRecord } from "../../lib/quota";
@@ -33,7 +34,71 @@ const KeyIdParamSchema = z.object({
 });
 
 // Virtual Key Management APIs
-vkeys.post("/", zValidator("json", CreateVirtualKeySchema), async (c) => {
+vkeys.post(
+  "/",
+  describeRoute({
+    description: "Create a new virtual API key",
+    tags: ["Virtual Keys"],
+    requestBody: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+            required: ["org_id", "user"],
+            properties: {
+              org_id: { type: "string", description: "Organization ID" },
+              user: { type: "string", description: "User identifier" },
+              name: { type: "string", description: "Optional friendly name" },
+              monthly_limit_usd: {
+                type: "number",
+                description: "Monthly quota limit in USD",
+                default: 10,
+              },
+            },
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Virtual key created successfully",
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              properties: {
+                virtual_key: { type: "object" },
+                api_key: { type: "string" },
+                message: { type: "string" },
+              },
+            },
+          },
+        },
+      },
+      404: {
+        description: "Organization or user not found",
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              properties: {
+                error: {
+                  type: "object",
+                  properties: {
+                    message: { type: "string" },
+                    type: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  }),
+  zValidator("json", CreateVirtualKeySchema),
+  async (c) => {
   const { GATEWAY_KV } = c.env;
 
   try {
@@ -122,9 +187,42 @@ vkeys.post("/", zValidator("json", CreateVirtualKeySchema), async (c) => {
       500,
     );
   }
-});
+  },
+);
 
-vkeys.get("/:key_id", zValidator("param", KeyIdParamSchema), async (c) => {
+vkeys.get(
+  "/:key_id",
+  describeRoute({
+    description: "Get virtual key details by key ID",
+    tags: ["Virtual Keys"],
+    parameters: [
+      {
+        name: "key_id",
+        in: "path",
+        required: true,
+        schema: { type: "string" },
+        description: "Virtual key ID",
+      },
+    ],
+    responses: {
+      200: {
+        description: "Virtual key details",
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              properties: { virtual_key: { type: "object" } },
+            },
+          },
+        },
+      },
+      404: {
+        description: "Virtual key not found",
+      },
+    },
+  }),
+  zValidator("param", KeyIdParamSchema),
+  async (c) => {
   const { GATEWAY_KV } = c.env;
   const keyId = c.req.param("key_id");
 
@@ -171,10 +269,42 @@ vkeys.get("/:key_id", zValidator("param", KeyIdParamSchema), async (c) => {
       500,
     );
   }
-});
+  },
+);
 
 vkeys.patch(
   "/:key_id",
+  describeRoute({
+    description: "Update virtual key configuration",
+    tags: ["Virtual Keys"],
+    parameters: [
+      {
+        name: "key_id",
+        in: "path",
+        required: true,
+        schema: { type: "string" },
+      },
+    ],
+    requestBody: {
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              monthly_limit_usd: { type: "number" },
+              status: { type: "string", enum: ["active", "revoked"] },
+              user: { type: "string" },
+            },
+          },
+        },
+      },
+    },
+    responses: {
+      200: { description: "Virtual key updated" },
+      404: { description: "Virtual key not found" },
+    },
+  }),
   zValidator("param", KeyIdParamSchema),
   zValidator("json", UpdateVirtualKeySchema),
   async (c) => {
@@ -243,7 +373,26 @@ vkeys.patch(
   },
 );
 
-vkeys.delete("/:key_id", zValidator("param", KeyIdParamSchema), async (c) => {
+vkeys.delete(
+  "/:key_id",
+  describeRoute({
+    description: "Delete a virtual key",
+    tags: ["Virtual Keys"],
+    parameters: [
+      {
+        name: "key_id",
+        in: "path",
+        required: true,
+        schema: { type: "string" },
+      },
+    ],
+    responses: {
+      200: { description: "Virtual key deleted" },
+      404: { description: "Virtual key not found" },
+    },
+  }),
+  zValidator("param", KeyIdParamSchema),
+  async (c) => {
   const { GATEWAY_KV } = c.env;
   const keyId = c.req.param("key_id");
 
@@ -287,11 +436,42 @@ vkeys.delete("/:key_id", zValidator("param", KeyIdParamSchema), async (c) => {
       500,
     );
   }
-});
+  },
+);
 
 // Usage APIs
 vkeys.get(
   "/:key_id/usage",
+  describeRoute({
+    description: "Get virtual key usage statistics",
+    tags: ["Virtual Keys"],
+    parameters: [
+      {
+        name: "key_id",
+        in: "path",
+        required: true,
+        schema: { type: "string" },
+      },
+    ],
+    responses: {
+      200: {
+        description: "Usage statistics",
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              properties: {
+                key_id: { type: "string" },
+                name: { type: "string" },
+                user: { type: "string" },
+                usage: { type: "object" },
+              },
+            },
+          },
+        },
+      },
+    },
+  }),
   zValidator("param", KeyIdParamSchema),
   async (c) => {
     const { GATEWAY_KV } = c.env;
@@ -353,6 +533,22 @@ vkeys.get(
 
 vkeys.post(
   "/:key_id/reset-quota",
+  describeRoute({
+    description: "Reset virtual key quota to zero",
+    tags: ["Virtual Keys"],
+    parameters: [
+      {
+        name: "key_id",
+        in: "path",
+        required: true,
+        schema: { type: "string" },
+      },
+    ],
+    responses: {
+      200: { description: "Quota reset successfully" },
+      404: { description: "Virtual key not found" },
+    },
+  }),
   zValidator("param", KeyIdParamSchema),
   async (c) => {
     const { GATEWAY_KV } = c.env;

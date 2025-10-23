@@ -1,5 +1,6 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
+import { describeRoute } from "hono-openapi";
 import * as z from "zod";
 import type {
   OrganizationConfig,
@@ -29,7 +30,14 @@ const OrgIdParamSchema = z.object({
 });
 
 // Organization Management
-organizations.get("/", async (c) => {
+organizations.get(
+  "/",
+  describeRoute({
+    description: "List all organizations",
+    tags: ["Organizations"],
+    responses: { 200: { description: "List of organizations" } },
+  }),
+  async (c) => {
   const { GATEWAY_KV } = c.env;
 
   try {
@@ -72,10 +80,16 @@ organizations.get("/", async (c) => {
       500,
     );
   }
-});
+  },
+);
 
 organizations.post(
   "/",
+  describeRoute({
+    description: "Create a new organization",
+    tags: ["Organizations"],
+    responses: { 201: { description: "Organization created" } },
+  }),
   zValidator("json", CreateOrganizationSchema),
   async (c) => {
     const { GATEWAY_KV } = c.env;
@@ -128,6 +142,11 @@ organizations.post(
 
 organizations.get(
   "/:org_id",
+  describeRoute({
+    description: "Get organization details",
+    tags: ["Organizations"],
+    responses: { 200: { description: "Organization details" } },
+  }),
   zValidator("param", OrgIdParamSchema),
   async (c) => {
     const { GATEWAY_KV } = c.env;
@@ -163,6 +182,11 @@ organizations.get(
 
 organizations.patch(
   "/:org_id",
+  describeRoute({
+    description: "Update organization configuration",
+    tags: ["Organizations"],
+    responses: { 200: { description: "Organization updated" } },
+  }),
   zValidator("param", OrgIdParamSchema),
   zValidator("json", UpdateOrganizationSchema),
   async (c) => {
@@ -216,6 +240,11 @@ organizations.patch(
 
 organizations.get(
   "/:org_id/vkeys",
+  describeRoute({
+    description: "List organization's virtual keys",
+    tags: ["Organizations"],
+    responses: { 200: { description: "List of virtual keys" } },
+  }),
   zValidator("param", OrgIdParamSchema),
   async (c) => {
     const { GATEWAY_KV } = c.env;
@@ -279,6 +308,11 @@ organizations.get(
 
 organizations.get(
   "/:org_id/usage",
+  describeRoute({
+    description: "Get organization usage statistics",
+    tags: ["Organizations"],
+    responses: { 200: { description: "Organization usage statistics" } },
+  }),
   zValidator("param", OrgIdParamSchema),
   async (c) => {
     const { GATEWAY_KV } = c.env;
@@ -329,6 +363,11 @@ organizations.get(
 
 organizations.delete(
   "/:org_id",
+  describeRoute({
+    description: "Delete an organization and cascade delete all associated resources",
+    tags: ["Organizations"],
+    responses: { 200: { description: "Organization deleted" } },
+  }),
   zValidator("param", OrgIdParamSchema),
   async (c) => {
     const { GATEWAY_KV } = c.env;

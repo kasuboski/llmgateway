@@ -1,5 +1,6 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
+import { describeRoute } from "hono-openapi";
 import * as z from "zod";
 import { getUserQuotaRecord } from "../../lib/quota";
 import type {
@@ -26,7 +27,15 @@ const UserParamSchema = z.object({
 });
 
 // User Management APIs
-users.post("/", zValidator("json", CreateUserSchema), async (c) => {
+users.post(
+  "/",
+  describeRoute({
+    description: "Create a new user",
+    tags: ["Users"],
+    responses: { 201: { description: "User created" }, 404: { description: "Organization not found" } },
+  }),
+  zValidator("json", CreateUserSchema),
+  async (c) => {
   const { GATEWAY_KV } = c.env;
 
   try {
@@ -87,9 +96,18 @@ users.post("/", zValidator("json", CreateUserSchema), async (c) => {
       500,
     );
   }
-});
+  },
+);
 
-users.get("/:user", zValidator("param", UserParamSchema), async (c) => {
+users.get(
+  "/:user",
+  describeRoute({
+    description: "Get user details",
+    tags: ["Users"],
+    responses: { 200: { description: "User details" }, 404: { description: "User not found" } },
+  }),
+  zValidator("param", UserParamSchema),
+  async (c) => {
   const { GATEWAY_KV } = c.env;
   const user = c.req.param("user");
 
@@ -119,6 +137,11 @@ users.get("/:user", zValidator("param", UserParamSchema), async (c) => {
 
 users.patch(
   "/:user",
+  describeRoute({
+    description: "Update user configuration",
+    tags: ["Users"],
+    responses: { 200: { description: "User updated" } },
+  }),
   zValidator("param", UserParamSchema),
   zValidator("json", UpdateUserSchema),
   async (c) => {
@@ -164,7 +187,15 @@ users.patch(
   },
 );
 
-users.delete("/:user", zValidator("param", UserParamSchema), async (c) => {
+users.delete(
+  "/:user",
+  describeRoute({
+    description: "Delete a user",
+    tags: ["Users"],
+    responses: { 200: { description: "User deleted" } },
+  }),
+  zValidator("param", UserParamSchema),
+  async (c) => {
   const { GATEWAY_KV } = c.env;
   const user = c.req.param("user");
 
@@ -202,6 +233,11 @@ users.delete("/:user", zValidator("param", UserParamSchema), async (c) => {
 // User Usage API
 users.get(
   "/:user/usage",
+  describeRoute({
+    description: "Get user aggregate usage statistics",
+    tags: ["Users"],
+    responses: { 200: { description: "User usage statistics" } },
+  }),
   zValidator("param", UserParamSchema),
   async (c) => {
     const { GATEWAY_KV } = c.env;
@@ -253,6 +289,11 @@ users.get(
 // List user's virtual keys
 users.get(
   "/:user/vkeys",
+  describeRoute({
+    description: "List all virtual keys for a user",
+    tags: ["Users"],
+    responses: { 200: { description: "List of user's virtual keys" } },
+  }),
   zValidator("param", UserParamSchema),
   async (c) => {
     const { GATEWAY_KV } = c.env;
