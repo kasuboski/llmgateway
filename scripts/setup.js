@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Setup script to initialize the AI Gateway with demo organizations and users
+ * Setup script to initialize the AI Gateway with demo organizations and virtual keys
  * Usage: node scripts/setup.js [--prod]
  */
 
@@ -64,7 +64,7 @@ async function createOrganization(orgData) {
 
 async function createUser(userData) {
   const endpoint = getApiEndpoint();
-  console.log(`👤 Creating user: ${userData.email}`);
+  console.log(`👤 Creating user: ${userData.user}`);
 
   try {
     const result = await makeRequest(`${endpoint}/admin/users`, {
@@ -72,16 +72,34 @@ async function createUser(userData) {
       body: JSON.stringify(userData),
     });
 
-    console.log(`✅ User created: ${result.user.user_id}`);
+    console.log(`✅ User created: ${result.user.user}`);
+    return result.user;
+  } catch (error) {
+    console.error(`❌ Failed to create user ${userData.user}:`, error.message);
+    throw error;
+  }
+}
+
+async function createVirtualKey(vkeyData) {
+  const endpoint = getApiEndpoint();
+  console.log(`🔑 Creating virtual key: ${vkeyData.name || vkeyData.user || 'unnamed'}`);
+
+  try {
+    const result = await makeRequest(`${endpoint}/admin/vkeys`, {
+      method: 'POST',
+      body: JSON.stringify(vkeyData),
+    });
+
+    console.log(`✅ Virtual key created: ${result.virtual_key.key_id}`);
     console.log(`🔑 API Key: ${result.api_key}`);
     console.log(`⚠️  Save this API key - it won't be shown again!`);
 
     return {
-      user: result.user,
+      vkey: result.virtual_key,
       api_key: result.api_key,
     };
   } catch (error) {
-    console.error(`❌ Failed to create user ${userData.email}:`, error.message);
+    console.error(`❌ Failed to create virtual key:`, error.message);
     throw error;
   }
 }
@@ -94,7 +112,7 @@ async function checkSystemHealth() {
     const metrics = await makeRequest(`${endpoint}/admin/metrics`);
     console.log('✅ System is healthy');
     console.log(
-      `📊 Current state: ${metrics.entities.users} users, ${metrics.entities.organizations} orgs`
+      `📊 Current state: ${metrics.entities.virtual_keys || 0} virtual keys, ${metrics.entities.organizations || 0} orgs`
     );
     return true;
   } catch (error) {
@@ -160,24 +178,52 @@ async function setup() {
 
   // Create demo users
   const demoUser = await createUser({
-    email: 'demo@example.com',
+    user: 'demo@example.com',
     org_id: demoOrg.org_id,
-    monthly_limit_usd: 100.0,
+    monthly_limit_usd: 300.0,
   });
 
   console.log('');
 
   const testUser = await createUser({
-    email: 'test@example.com',
+    user: 'test@example.com',
     org_id: testOrg.org_id,
-    monthly_limit_usd: 50.0,
+    monthly_limit_usd: 150.0,
   });
 
   console.log('');
 
   const adminUser = await createUser({
-    email: 'admin@example.com',
+    user: 'admin@example.com',
     org_id: demoOrg.org_id,
+    monthly_limit_usd: 500.0,
+  });
+
+  console.log('');
+
+  // Create demo virtual keys
+  const demoKey = await createVirtualKey({
+    org_id: demoOrg.org_id,
+    user: demoUser.user,
+    name: 'Demo User Key',
+    monthly_limit_usd: 100.0,
+  });
+
+  console.log('');
+
+  const testKey = await createVirtualKey({
+    org_id: testOrg.org_id,
+    user: testUser.user,
+    name: 'Test User Key',
+    monthly_limit_usd: 50.0,
+  });
+
+  console.log('');
+
+  const adminKey = await createVirtualKey({
+    org_id: demoOrg.org_id,
+    user: adminUser.user,
+    name: 'Admin User Key',
     monthly_limit_usd: 200.0,
   });
 
@@ -186,6 +232,7 @@ async function setup() {
   console.log('\n📋 Summary:');
   console.log(`   Organizations created: 2`);
   console.log(`   Users created: 3`);
+  console.log(`   Virtual keys created: 3`);
   console.log(`   API keys generated: 3`);
   console.log('');
 
@@ -203,23 +250,38 @@ async function setup() {
   console.log('');
 
   console.log('👥 Users:');
-  console.log(`   1. ${demoUser.user.email} (${demoUser.user.user_id})`);
-  console.log(`      Limit: $${demoUser.user.monthly_limit_usd}/month`);
-  console.log(`      API Key: ${demoUser.api_key}`);
+  console.log(`   1. ${demoUser.user}`);
+  console.log(`      Organization: ${demoUser.org_id}`);
+  console.log(`      Monthly Limit: $${demoUser.monthly_limit_usd}`);
+  console.log(`   2. ${testUser.user}`);
+  console.log(`      Organization: ${testUser.org_id}`);
+  console.log(`      Monthly Limit: $${testUser.monthly_limit_usd}`);
+  console.log(`   3. ${adminUser.user}`);
+  console.log(`      Organization: ${adminUser.org_id}`);
+  console.log(`      Monthly Limit: $${adminUser.monthly_limit_usd}`);
   console.log('');
-  console.log(`   2. ${testUser.user.email} (${testUser.user.user_id})`);
-  console.log(`      Limit: $${testUser.user.monthly_limit_usd}/month`);
-  console.log(`      API Key: ${testUser.api_key}`);
+
+  console.log('🔑 Virtual Keys:');
+  console.log(`   1. ${demoKey.vkey.name} (${demoKey.vkey.key_id})`);
+  console.log(`      User: ${demoKey.vkey.user}`);
+  console.log(`      Limit: $${demoKey.vkey.monthly_limit_usd}/month`);
+  console.log(`      API Key: ${demoKey.api_key}`);
   console.log('');
-  console.log(`   3. ${adminUser.user.email} (${adminUser.user.user_id})`);
-  console.log(`      Limit: $${adminUser.user.monthly_limit_usd}/month`);
-  console.log(`      API Key: ${adminUser.api_key}`);
+  console.log(`   2. ${testKey.vkey.name} (${testKey.vkey.key_id})`);
+  console.log(`      User: ${testKey.vkey.user}`);
+  console.log(`      Limit: $${testKey.vkey.monthly_limit_usd}/month`);
+  console.log(`      API Key: ${testKey.api_key}`);
+  console.log('');
+  console.log(`   3. ${adminKey.vkey.name} (${adminKey.vkey.key_id})`);
+  console.log(`      User: ${adminKey.vkey.user}`);
+  console.log(`      Limit: $${adminKey.vkey.monthly_limit_usd}/month`);
+  console.log(`      API Key: ${adminKey.api_key}`);
   console.log('');
 
   console.log('🧪 Next Steps:');
   console.log("   1. Save the API keys above (they won't be shown again)");
   console.log('   2. Test the chat endpoint with: node scripts/chat.js');
-  console.log('   3. Manage users with: node scripts/admin.js --help');
+  console.log('   3. Manage virtual keys with: node scripts/admin.js --help');
   console.log('   4. Check metrics with: node scripts/admin.js metrics');
 
   console.log('\n🔑 Provider API Keys:');

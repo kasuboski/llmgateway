@@ -1,11 +1,12 @@
 /**
- * Complete Admin API routes for user, organization, and system management
+ * Complete Admin API routes for virtual keys, organization, and system management
  */
 
 import { Hono } from "hono";
 
 import organizationRoutes from "./admin/organizations";
 import userRoutes from "./admin/users";
+import vkeyRoutes from "./admin/vkeys";
 
 const admin = new Hono<{ Bindings: CloudflareBindings }>();
 
@@ -27,16 +28,14 @@ admin.get("/metrics", async (c) => {
       return count;
     }
 
-    const userCount = await getExactCount("user:");
+    const vkeyCount = await getExactCount("vkey:");
     const orgCount = await getExactCount("org:");
-    const apiKeyCount = await getExactCount("apikey:");
 
     return c.json({
       timestamp: new Date().toISOString(),
       entities: {
-        users: userCount,
+        virtual_keys: vkeyCount,
         organizations: orgCount,
-        api_keys: apiKeyCount,
       },
     });
   }
@@ -49,9 +48,8 @@ admin.get("/metrics", async (c) => {
     return "1000+"; // It's an estimate
   }
 
-  const userCount = await getCountEstimate("user:");
+  const vkeyCount = await getCountEstimate("vkey:");
   const orgCount = await getCountEstimate("org:");
-  const apiKeyCount = await getCountEstimate("apikey:");
 
   return c.json({
     timestamp: new Date().toISOString(),
@@ -59,9 +57,8 @@ admin.get("/metrics", async (c) => {
       version: "1.0.0",
     },
     entities: {
-      users: userCount,
+      virtual_keys: vkeyCount,
       organizations: orgCount,
-      api_keys: apiKeyCount,
     },
     note: 'Counts are exact up to 1,000. "1000+" indicates more records exist. For an exact count, use ?mode=exact (may be slow).',
   });
@@ -69,5 +66,6 @@ admin.get("/metrics", async (c) => {
 
 admin.route("/organizations", organizationRoutes);
 admin.route("/users", userRoutes);
+admin.route("/vkeys", vkeyRoutes);
 
 export default admin;

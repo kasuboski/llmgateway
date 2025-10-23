@@ -44,14 +44,14 @@ async function makeRequest(url, options = {}) {
   return response.json();
 }
 
-async function getAllKvKeys() {
+async function getSystemMetrics() {
   const endpoint = getApiEndpoint();
-  console.log('🔍 Getting system metrics to identify all KV keys...');
+  console.log('🔍 Getting system metrics...');
 
   try {
     const metrics = await makeRequest(`${endpoint}/admin/metrics`);
     console.log(
-      `📊 Found ${metrics.usage.total_users} users, ${metrics.usage.total_organizations} organizations, ${metrics.usage.api_keys.total} API keys`
+      `📊 Found ${metrics.entities.virtual_keys || 0} virtual keys, ${metrics.entities.organizations || 0} organizations`
     );
     return metrics;
   } catch (error) {
@@ -63,12 +63,37 @@ async function getAllKvKeys() {
   }
 }
 
-async function confirmCleanup() {
+async function getAllOrganizations() {
+  const endpoint = getApiEndpoint();
+
+  try {
+    const result = await makeRequest(`${endpoint}/admin/organizations`);
+    return result.organizations || [];
+  } catch (error) {
+    console.error('❌ Failed to list organizations:', error.message);
+    return [];
+  }
+}
+
+async function deleteOrganization(orgId) {
+  const endpoint = getApiEndpoint();
+
+  try {
+    const result = await makeRequest(`${endpoint}/admin/organizations/${orgId}`, {
+      method: 'DELETE',
+    });
+    return result;
+  } catch (error) {
+    throw new Error(`Failed to delete organization ${orgId}: ${error.message}`);
+  }
+}
+
+async function confirmCleanup(orgCount) {
   console.log('\n⚠️  WARNING: This will delete ALL data from KV storage!');
-  console.log('   - All user configurations and quotas');
-  console.log('   - All organization settings');
-  console.log('   - All API keys');
-  console.log('   - All usage data');
+  console.log(`   - ${orgCount} organization(s) and all their settings`);
+  console.log('   - All associated users and their quotas');
+  console.log('   - All virtual keys and their quotas');
+  console.log('   - All usage tracking data');
 
   // In a real environment, you'd use readline for interactive confirmation
   // For script automation, we'll require explicit confirmation via flag
@@ -92,44 +117,66 @@ async function cleanup() {
   console.log('');
 
   // Get current state
-  const metrics = await getAllKvKeys();
+  const metrics = await getSystemMetrics();
 
-  await confirmCleanup();
-
-  console.log('\n🚀 Starting cleanup process...');
-
-  // Note: Since we don't have direct KV access in the script environment,
-  // we'd need to implement cleanup endpoints in the admin API.
-  // For now, we'll provide manual cleanup instructions.
-
-  console.log('\n📋 Manual Cleanup Instructions:');
-  console.log('   The current admin API does not expose bulk delete endpoints.');
-  console.log('   To clean up KV storage, use the Cloudflare Dashboard:');
-  console.log('');
-  console.log('   1. Go to Cloudflare Dashboard > Workers & Pages > KV');
-  console.log('   2. Select your GATEWAY_KV namespace');
-  console.log('   3. Delete keys matching these patterns:');
-  console.log('      - user:*');
-  console.log('      - apikey:*');
-  console.log('      - org:*');
-  console.log('      - system:*');
-  console.log('');
-  console.log('   Or use wrangler CLI:');
-  console.log('   wrangler kv:key list --binding GATEWAY_KV');
-  console.log('   wrangler kv:key delete --binding GATEWAY_KV "key-name"');
-  console.log('');
-
-  if (metrics && (metrics.usage.total_users > 0 || metrics.usage.total_organizations > 0)) {
-    console.log(`📊 Current state before cleanup:`);
-    console.log(`   - Users: ${metrics.usage.total_users}`);
-    console.log(`   - Organizations: ${metrics.usage.total_organizations}`);
-    console.log(`   - API Keys: ${metrics.usage.api_keys.total}`);
-    console.log(`   - Total requests this month: ${metrics.usage.total_requests_this_month}`);
-    console.log(`   - Total cost this month: $${metrics.usage.total_cost_usd_this_month}`);
+  if (!metrics) {
+    console.log('\n❌ Cannot proceed - system is not accessible');
+    console.log('   Make sure the gateway is running:');
+    console.log('   ADMIN_API_KEY="admin_test_key_123" pnpm dev');
+    process.exit(1);
   }
 
-  console.log('\n✅ Cleanup information provided.');
-  console.log('ℹ️  After manual cleanup, run the setup script to reinitialize.');
+  // Get all organizations
+  console.log('\n🔍 Listing all organizations...');
+  const organizations = await getAllOrganizations();
+
+  if (organizations.length === 0) {
+    console.log('\n✅ No organizations found - KV storage is already clean!');
+    console.log('   Run the setup script to create demo data:');
+    console.log('   node scripts/setup.js');
+    return;
+  }
+
+  console.log(`📋 Found ${organizations.length} organization(s):`);
+  organizations.forEach((org, idx) => {
+    console.log(`   ${idx + 1}. ${org.name} (${org.org_id})`);
+  });
+
+  await confirmCleanup(organizations.length);
+
+  console.log('\n🚀 Starting cleanup process...');
+  console.log('   Using cascade delete - each org deletion will remove:');
+  console.log('   - All users in the organization');
+  console.log('   - All virtual keys for those users');
+  console.log('   - All quota data\n');
+
+  let totalDeleted = 0;
+  let totalVkeys = 0;
+  let totalUsers = 0;
+
+  for (const org of organizations) {
+    try {
+      console.log(`🗑️  Deleting ${org.name} (${org.org_id})...`);
+      const result = await deleteOrganization(org.org_id);
+
+      console.log(`   ✅ Deleted ${result.deleted_virtual_keys} virtual keys, ${result.deleted_users} users`);
+      totalDeleted++;
+      totalVkeys += result.deleted_virtual_keys;
+      totalUsers += result.deleted_users;
+    } catch (error) {
+      console.error(`   ❌ Failed: ${error.message}`);
+    }
+  }
+
+  console.log('\n🎉 Cleanup completed successfully!');
+  console.log(`📊 Summary:`);
+  console.log(`   - Organizations deleted: ${totalDeleted}/${organizations.length}`);
+  console.log(`   - Users deleted: ${totalUsers}`);
+  console.log(`   - Virtual keys deleted: ${totalVkeys}`);
+  console.log('');
+  console.log('✅ KV storage is now clean!');
+  console.log('   Run the setup script to create demo data:');
+  console.log('   node scripts/setup.js');
 }
 
 // Run the cleanup
