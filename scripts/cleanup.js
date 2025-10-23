@@ -109,6 +109,7 @@ async function cleanup() {
   console.log('   2. Select your GATEWAY_KV namespace');
   console.log('   3. Delete keys matching these patterns:');
   console.log('      - vkey:*  (virtual key configs and quotas)');
+  console.log('      - user:*  (user configs and quotas)');
   console.log('      - org:*   (organization configs and quotas)');
   console.log('');
   console.log('   Or use wrangler CLI:');
