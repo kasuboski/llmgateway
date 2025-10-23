@@ -12,8 +12,9 @@ import {
   getCurrentMonth,
   updateOrganizationQuotaUsage,
   updateQuotaUsage,
+  updateUserQuotaUsage,
 } from "../lib/quota";
-import type { OrganizationConfig, QuotaRecord } from "../types";
+import type { OrganizationConfig, QuotaRecord, UserConfig } from "../types";
 
 const chat = new Hono<{ Bindings: CloudflareBindings }>();
 
@@ -34,7 +35,7 @@ interface VirtualKey {
   key_id: string;
   key_hash: string;
   org_id: string;
-  user?: string;
+  user: string;
   name?: string;
   monthly_limit_usd: number;
 }
@@ -42,6 +43,7 @@ interface VirtualKey {
 interface QuotaCheckResult {
   allowed: boolean;
   keyQuotaRecord: QuotaRecord;
+  userQuotaRecord: QuotaRecord;
   orgQuotaRecord: QuotaRecord;
   reason?: string;
 }
@@ -61,6 +63,23 @@ async function getOrganizationConfig(
     )) as OrganizationConfig | null;
   } catch (error) {
     console.error("Failed to get organization config:", error);
+    return null;
+  }
+}
+
+async function getUserConfig(
+  kv: KVNamespace,
+  user: string,
+): Promise<UserConfig | null> {
+  if (!user) return null;
+
+  try {
+    return (await kv.get(
+      `user:${user}:config`,
+      "json",
+    )) as UserConfig | null;
+  } catch (error) {
+    console.error("Failed to get user config:", error);
     return null;
   }
 }
@@ -133,14 +152,17 @@ function validateProviderAndApiKey(
 async function performQuotaCheck(
   kv: KVNamespace,
   vkey: VirtualKey,
+  userConfig: UserConfig,
   organizationConfig: OrganizationConfig,
 ): Promise<QuotaCheckResult> {
   try {
     return await checkReactiveQuotaLimit(
       kv,
       vkey.key_hash,
+      vkey.user,
       vkey.org_id,
       vkey.monthly_limit_usd,
+      userConfig.monthly_limit_usd,
       organizationConfig.monthly_budget_usd,
     );
   } catch (error) {
@@ -154,6 +176,12 @@ async function performQuotaCheck(
       return {
         allowed: true,
         keyQuotaRecord: {
+          month_usage_usd: 0,
+          current_month: getCurrentMonth(),
+          request_count: 0,
+          last_update: Date.now(),
+        },
+        userQuotaRecord: {
           month_usage_usd: 0,
           current_month: getCurrentMonth(),
           request_count: 0,
@@ -175,6 +203,7 @@ async function performQuotaCheck(
 function handleQuotaFailure(
   quotaCheckResult: QuotaCheckResult,
   vkey: VirtualKey,
+  userConfig: UserConfig,
   organizationConfig: OrganizationConfig,
 ): Response {
   if (quotaCheckResult.reason === "key_quota_exceeded") {
@@ -191,6 +220,26 @@ function handleQuotaFailure(
             limit_usd: vkey.monthly_limit_usd,
             remaining_usd: remainingUsd,
             current_month: quotaCheckResult.keyQuotaRecord!.current_month,
+          },
+        },
+      },
+      { status: 429 },
+    );
+  } else if (quotaCheckResult.reason === "user_quota_exceeded") {
+    const remainingUserUsd =
+      userConfig.monthly_limit_usd -
+      quotaCheckResult.userQuotaRecord!.month_usage_usd;
+    return Response.json(
+      {
+        error: {
+          message: `User monthly quota exceeded. Used: $${quotaCheckResult.userQuotaRecord!.month_usage_usd.toFixed(4)}, Limit: $${userConfig.monthly_limit_usd}, Remaining: $${remainingUserUsd.toFixed(4)}`,
+          type: "user_quota_exceeded",
+          details: {
+            user: vkey.user,
+            usage_usd: quotaCheckResult.userQuotaRecord!.month_usage_usd,
+            limit_usd: userConfig.monthly_limit_usd,
+            remaining_usd: remainingUserUsd,
+            current_month: quotaCheckResult.userQuotaRecord!.current_month,
           },
         },
       },
@@ -290,6 +339,7 @@ async function updateUsageTracking(
 ): Promise<QuotaRecord> {
   try {
     const updatedQuota = await updateQuotaUsage(kv, vkey.key_hash, actualCost);
+    await updateUserQuotaUsage(kv, vkey.user, actualCost);
     await updateOrganizationQuotaUsage(kv, vkey.org_id, actualCost);
 
     return updatedQuota;
@@ -380,13 +430,14 @@ chat.post(
       const model = payload.model;
       const requestBodyText = JSON.stringify(payload);
 
-      // 2. Get organization config
+      // 2. Get organization and user configs
       const organizationConfig = await getOrganizationConfig(
         GATEWAY_KV,
         vkey.org_id,
       );
+      const userConfig = await getUserConfig(GATEWAY_KV, vkey.user);
 
-      // 3. Early validation for organization existence
+      // 3. Early validation for organization and user existence
       const orgValidation = validateOrganizationExists(
         vkey,
         organizationConfig,
@@ -395,8 +446,21 @@ chat.post(
         return orgValidation.errorResponse!;
       }
 
-      // After validation, we're guaranteed to have organizationConfig
+      if (!userConfig) {
+        return Response.json(
+          {
+            error: {
+              message: `User configuration not found for user: ${vkey.user}`,
+              type: "user_error",
+            },
+          },
+          { status: 503 },
+        );
+      }
+
+      // After validation, we're guaranteed to have organizationConfig and userConfig
       const validatedOrgConfig = organizationConfig!;
+      const validatedUserConfig = userConfig;
 
       // 4. Validate provider and get API key
       const providerValidation = validateProviderAndApiKey(
@@ -414,6 +478,7 @@ chat.post(
         quotaCheckResult = await performQuotaCheck(
           GATEWAY_KV,
           vkey,
+          validatedUserConfig,
           validatedOrgConfig,
         );
       } catch (_error) {
@@ -431,7 +496,12 @@ chat.post(
 
       // 6. Handle quota failures
       if (!quotaCheckResult.allowed) {
-        return handleQuotaFailure(quotaCheckResult, vkey, validatedOrgConfig);
+        return handleQuotaFailure(
+          quotaCheckResult,
+          vkey,
+          validatedUserConfig,
+          validatedOrgConfig,
+        );
       }
 
       // 7. Make AI Gateway request

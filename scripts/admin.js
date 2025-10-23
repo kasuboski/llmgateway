@@ -57,7 +57,14 @@ Commands:
   org usage <org_id>                     Show organization usage
   org vkeys <org_id>                     List virtual keys in organization
 
-  vkey create <org_id> [limit] [user] [name]  Create a new virtual key
+  user create <email> <org_id> [limit]   Create a new user
+  user get <email>                       Get user details
+  user usage <email>                     Show user aggregate usage
+  user vkeys <email>                     List user's virtual keys
+  user update <email> <limit>            Update user quota limit
+  user delete <email>                    Delete user
+
+  vkey create <org_id> <user> [limit] [name]  Create a new virtual key
   vkey get <key_id>                            Get virtual key details
   vkey usage <key_id>                          Show virtual key usage
   vkey reset-quota <key_id>                    Reset virtual key quota
@@ -71,9 +78,10 @@ Options:
 Examples:
   node scripts/admin.js metrics
   node scripts/admin.js org create "My Company" 1000
-  node scripts/admin.js vkey create org_123 200 alice@company.com "Alice Production Key"
+  node scripts/admin.js user create alice@company.com org_123 200
+  node scripts/admin.js vkey create org_123 alice@company.com 50 "Alice Dev Key"
   node scripts/admin.js vkey usage vkey_456
-  node scripts/admin.js vkey update vkey_456 status revoked
+  node scripts/admin.js user usage alice@company.com
 `);
 }
 
@@ -183,17 +191,134 @@ async function getOrganizationVkeys(orgId) {
   }
 }
 
-async function createVirtualKey(orgId, limit = 100, user = undefined, name = undefined) {
+async function createUser(email, orgId, limit = 50) {
   const endpoint = getApiEndpoint();
-  console.log(`🔑 Creating virtual key for org: ${orgId}`);
+  console.log(`👤 Creating user: ${email}`);
+
+  try {
+    const result = await makeRequest(`${endpoint}/admin/users`, {
+      method: 'POST',
+      body: JSON.stringify({
+        user: email,
+        org_id: orgId,
+        monthly_limit_usd: parseFloat(limit),
+      }),
+    });
+
+    console.log('✅ User created successfully');
+    console.log(`   User: ${result.user.user}`);
+    console.log(`   Organization: ${result.user.org_id}`);
+    console.log(`   Monthly Limit: $${result.user.monthly_limit_usd}`);
+    console.log(`   Created: ${result.user.created_at}`);
+  } catch (error) {
+    console.error('❌ Failed to create user:', error.message);
+  }
+}
+
+async function getUser(email) {
+  const endpoint = getApiEndpoint();
+  console.log(`👤 Getting user: ${email}`);
+
+  try {
+    const result = await makeRequest(`${endpoint}/admin/users/${encodeURIComponent(email)}`);
+
+    console.log('✅ User details:');
+    console.log(`   User: ${result.user.user}`);
+    console.log(`   Organization: ${result.user.org_id}`);
+    console.log(`   Monthly Limit: $${result.user.monthly_limit_usd}`);
+    console.log(`   Created: ${result.user.created_at}`);
+  } catch (error) {
+    console.error('❌ Failed to get user:', error.message);
+  }
+}
+
+async function getUserUsage(email) {
+  const endpoint = getApiEndpoint();
+  console.log(`📊 Getting user usage: ${email}`);
+
+  try {
+    const result = await makeRequest(`${endpoint}/admin/users/${encodeURIComponent(email)}/usage`);
+
+    console.log('✅ User aggregate usage:');
+    console.log(`   User: ${result.user}`);
+    console.log(`   Organization: ${result.org_id}`);
+    console.log(`   Current Month: ${result.usage.current_month}`);
+    console.log(`   Usage: $${result.usage.usage_usd.toFixed(2)}`);
+    console.log(`   Limit: $${result.usage.limit_usd}`);
+    console.log(`   Remaining: $${result.usage.remaining_usd.toFixed(2)}`);
+    console.log(`   Requests: ${result.usage.request_count}`);
+    console.log(`   Last Update: ${result.usage.last_update}`);
+  } catch (error) {
+    console.error('❌ Failed to get user usage:', error.message);
+  }
+}
+
+async function getUserVkeys(email) {
+  const endpoint = getApiEndpoint();
+  console.log(`🔑 Getting virtual keys for user: ${email}`);
+
+  try {
+    const result = await makeRequest(`${endpoint}/admin/users/${encodeURIComponent(email)}/vkeys`);
+
+    console.log(`✅ Found ${result.virtual_keys.length} virtual keys:`);
+    result.virtual_keys.forEach((vkey, index) => {
+      console.log(`   ${index + 1}. ${vkey.name || vkey.key_id} (${vkey.key_id})`);
+      console.log(`      Limit: $${vkey.monthly_limit_usd}/month`);
+      console.log(`      Status: ${vkey.status}`);
+      console.log(`      Created: ${vkey.created_at}`);
+    });
+  } catch (error) {
+    console.error('❌ Failed to get user virtual keys:', error.message);
+  }
+}
+
+async function updateUser(email, limit) {
+  const endpoint = getApiEndpoint();
+  console.log(`✏️  Updating user ${email}: monthly_limit_usd = ${limit}`);
+
+  try {
+    const result = await makeRequest(`${endpoint}/admin/users/${encodeURIComponent(email)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        monthly_limit_usd: parseFloat(limit),
+      }),
+    });
+
+    console.log('✅ User updated successfully');
+    console.log(`   User: ${result.user.user}`);
+    console.log(`   Organization: ${result.user.org_id}`);
+    console.log(`   Monthly Limit: $${result.user.monthly_limit_usd}`);
+  } catch (error) {
+    console.error('❌ Failed to update user:', error.message);
+  }
+}
+
+async function deleteUser(email) {
+  const endpoint = getApiEndpoint();
+  console.log(`🗑️  Deleting user: ${email}`);
+
+  try {
+    const _result = await makeRequest(`${endpoint}/admin/users/${encodeURIComponent(email)}`, {
+      method: 'DELETE',
+    });
+
+    console.log('✅ User deleted successfully');
+  } catch (error) {
+    console.error('❌ Failed to delete user:', error.message);
+  }
+}
+
+async function createVirtualKey(orgId, user, limit = 10, name = undefined) {
+  const endpoint = getApiEndpoint();
+  console.log(`🔑 Creating virtual key for user: ${user}`);
 
   try {
     const body = {
       org_id: orgId,
+      user: user,
       monthly_limit_usd: parseFloat(limit),
     };
 
-    if (user) body.user = user;
     if (name) body.name = name;
 
     const result = await makeRequest(`${endpoint}/admin/vkeys`, {
@@ -204,7 +329,7 @@ async function createVirtualKey(orgId, limit = 100, user = undefined, name = und
     console.log('✅ Virtual key created successfully');
     console.log(`   Key ID: ${result.virtual_key.key_id}`);
     console.log(`   Name: ${result.virtual_key.name || 'N/A'}`);
-    console.log(`   User: ${result.virtual_key.user || 'N/A'}`);
+    console.log(`   User: ${result.virtual_key.user}`);
     console.log(`   Org ID: ${result.virtual_key.org_id}`);
     console.log(`   Limit: $${result.virtual_key.monthly_limit_usd}/month`);
     console.log(`   Status: ${result.virtual_key.status}`);
@@ -383,14 +508,65 @@ async function main() {
         }
         break;
 
+      case 'user':
+        switch (subcommand) {
+          case 'create':
+            if (!params[0] || !params[1]) {
+              console.error('❌ User email and organization ID are required');
+              return;
+            }
+            await createUser(params[0], params[1], params[2]);
+            break;
+          case 'get':
+            if (!params[0]) {
+              console.error('❌ User email is required');
+              return;
+            }
+            await getUser(params[0]);
+            break;
+          case 'usage':
+            if (!params[0]) {
+              console.error('❌ User email is required');
+              return;
+            }
+            await getUserUsage(params[0]);
+            break;
+          case 'vkeys':
+            if (!params[0]) {
+              console.error('❌ User email is required');
+              return;
+            }
+            await getUserVkeys(params[0]);
+            break;
+          case 'update':
+            if (!params[0] || !params[1]) {
+              console.error('❌ User email and monthly limit are required');
+              console.log('   Example: user update alice@company.com 200');
+              return;
+            }
+            await updateUser(params[0], params[1]);
+            break;
+          case 'delete':
+            if (!params[0]) {
+              console.error('❌ User email is required');
+              return;
+            }
+            await deleteUser(params[0]);
+            break;
+          default:
+            console.error(`❌ Unknown user subcommand: ${subcommand}`);
+            console.log('   Available: create, get, usage, vkeys, update, delete');
+        }
+        break;
+
       case 'vkey':
         switch (subcommand) {
           case 'create':
-            if (!params[0]) {
-              console.error('❌ Organization ID is required');
+            if (!params[0] || !params[1]) {
+              console.error('❌ Organization ID and user email are required');
               return;
             }
-            // vkey create <org_id> [limit] [user] [name]
+            // vkey create <org_id> <user> [limit] [name]
             await createVirtualKey(params[0], params[1], params[2], params[3]);
             break;
           case 'get':
@@ -438,7 +614,7 @@ async function main() {
 
       default:
         console.error(`❌ Unknown command: ${command}`);
-        console.log('   Available commands: metrics, org, vkey');
+        console.log('   Available commands: metrics, org, user, vkey');
         console.log('   Use --help for full usage information');
     }
   } catch (error) {

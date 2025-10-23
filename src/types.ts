@@ -4,10 +4,17 @@ export interface VirtualKeyConfig {
   key_id: string;                    // Unique identifier for the key
   key_hash: string;                  // SHA-256 hash of the actual key
   org_id: string;                    // Organization this key belongs to
-  user?: string;                     // Optional user identifier for grouping/analytics
+  user: string;                      // REQUIRED: User identifier (email or ID)
   name?: string;                     // Optional friendly name for the key
   monthly_limit_usd: number;         // Monthly spending limit for this key
   status: 'active' | 'revoked';      // Key status
+  created_at: string;                // ISO timestamp
+}
+
+export interface UserConfig {
+  user: string;                      // User identifier (email or ID)
+  org_id: string;                    // Organization this user belongs to
+  monthly_limit_usd: number;         // Monthly aggregate quota across all user's keys
   created_at: string;                // ISO timestamp
 }
 

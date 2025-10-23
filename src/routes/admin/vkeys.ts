@@ -6,6 +6,7 @@ import { getCurrentMonth, getQuotaRecord } from "../../lib/quota";
 import type {
   OrganizationConfig,
   QuotaRecord,
+  UserConfig,
   VirtualKeyConfig,
 } from "../../types";
 
@@ -14,7 +15,7 @@ const vkeys = new Hono<{ Bindings: CloudflareBindings }>();
 // Schemas
 const CreateVirtualKeySchema = z.object({
   org_id: z.string().min(1),
-  user: z.string().optional(), // Optional user identifier for grouping
+  user: z.string().min(1), // Required user identifier
   name: z.string().optional(), // Optional friendly name
   monthly_limit_usd: z.number().positive().optional(),
 });
@@ -47,6 +48,31 @@ vkeys.post("/", zValidator("json", CreateVirtualKeySchema), async (c) => {
       return c.json(
         { error: { message: "Organization not found", type: "not_found" } },
         404,
+      );
+    }
+
+    // Validate user exists
+    const userConfig = (await GATEWAY_KV.get(
+      `user:${user}:config`,
+      "json",
+    )) as UserConfig | null;
+    if (!userConfig) {
+      return c.json(
+        { error: { message: "User not found", type: "not_found" } },
+        404,
+      );
+    }
+
+    // Validate user belongs to the same organization
+    if (userConfig.org_id !== org_id) {
+      return c.json(
+        {
+          error: {
+            message: "User does not belong to the specified organization",
+            type: "invalid_request",
+          },
+        },
+        400,
       );
     }
 

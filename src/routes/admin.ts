@@ -5,6 +5,7 @@
 import { Hono } from "hono";
 
 import organizationRoutes from "./admin/organizations";
+import userRoutes from "./admin/users";
 import vkeyRoutes from "./admin/vkeys";
 
 const admin = new Hono<{ Bindings: CloudflareBindings }>();
@@ -64,6 +65,7 @@ admin.get("/metrics", async (c) => {
 });
 
 admin.route("/organizations", organizationRoutes);
+admin.route("/users", userRoutes);
 admin.route("/vkeys", vkeyRoutes);
 
 export default admin;

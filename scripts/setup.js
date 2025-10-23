@@ -62,6 +62,24 @@ async function createOrganization(orgData) {
   }
 }
 
+async function createUser(userData) {
+  const endpoint = getApiEndpoint();
+  console.log(`👤 Creating user: ${userData.user}`);
+
+  try {
+    const result = await makeRequest(`${endpoint}/admin/users`, {
+      method: 'POST',
+      body: JSON.stringify(userData),
+    });
+
+    console.log(`✅ User created: ${result.user.user}`);
+    return result.user;
+  } catch (error) {
+    console.error(`❌ Failed to create user ${userData.user}:`, error.message);
+    throw error;
+  }
+}
+
 async function createVirtualKey(vkeyData) {
   const endpoint = getApiEndpoint();
   console.log(`🔑 Creating virtual key: ${vkeyData.name || vkeyData.user || 'unnamed'}`);
@@ -158,10 +176,35 @@ async function setup() {
 
   console.log('');
 
+  // Create demo users
+  const demoUser = await createUser({
+    user: 'demo@example.com',
+    org_id: demoOrg.org_id,
+    monthly_limit_usd: 300.0,
+  });
+
+  console.log('');
+
+  const testUser = await createUser({
+    user: 'test@example.com',
+    org_id: testOrg.org_id,
+    monthly_limit_usd: 150.0,
+  });
+
+  console.log('');
+
+  const adminUser = await createUser({
+    user: 'admin@example.com',
+    org_id: demoOrg.org_id,
+    monthly_limit_usd: 500.0,
+  });
+
+  console.log('');
+
   // Create demo virtual keys
   const demoKey = await createVirtualKey({
     org_id: demoOrg.org_id,
-    user: 'demo@example.com',
+    user: demoUser.user,
     name: 'Demo User Key',
     monthly_limit_usd: 100.0,
   });
@@ -170,7 +213,7 @@ async function setup() {
 
   const testKey = await createVirtualKey({
     org_id: testOrg.org_id,
-    user: 'test@example.com',
+    user: testUser.user,
     name: 'Test User Key',
     monthly_limit_usd: 50.0,
   });
@@ -179,7 +222,7 @@ async function setup() {
 
   const adminKey = await createVirtualKey({
     org_id: demoOrg.org_id,
-    user: 'admin@example.com',
+    user: adminUser.user,
     name: 'Admin User Key',
     monthly_limit_usd: 200.0,
   });
@@ -188,6 +231,7 @@ async function setup() {
   console.log('\n🎉 Setup completed successfully!');
   console.log('\n📋 Summary:');
   console.log(`   Organizations created: 2`);
+  console.log(`   Users created: 3`);
   console.log(`   Virtual keys created: 3`);
   console.log(`   API keys generated: 3`);
   console.log('');
@@ -203,6 +247,18 @@ async function setup() {
   console.log(
     `      Provider Keys: ${Object.keys(testOrg.provider_keys || {}).join(', ') || 'None'}`
   );
+  console.log('');
+
+  console.log('👥 Users:');
+  console.log(`   1. ${demoUser.user}`);
+  console.log(`      Organization: ${demoUser.org_id}`);
+  console.log(`      Monthly Limit: $${demoUser.monthly_limit_usd}`);
+  console.log(`   2. ${testUser.user}`);
+  console.log(`      Organization: ${testUser.org_id}`);
+  console.log(`      Monthly Limit: $${testUser.monthly_limit_usd}`);
+  console.log(`   3. ${adminUser.user}`);
+  console.log(`      Organization: ${adminUser.org_id}`);
+  console.log(`      Monthly Limit: $${adminUser.monthly_limit_usd}`);
   console.log('');
 
   console.log('🔑 Virtual Keys:');
