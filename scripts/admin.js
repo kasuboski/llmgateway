@@ -52,10 +52,12 @@ Usage: node scripts/admin.js <command> [options]
 
 Commands:
   metrics                                Show system metrics and usage statistics
+  org list                               List all organizations
   org create <name> [budget]             Create a new organization
   org get <org_id>                       Get organization details
   org usage <org_id>                     Show organization usage
   org vkeys <org_id>                     List virtual keys in organization
+  org delete <org_id>                    Delete organization (cascades to users/vkeys)
 
   user create <email> <org_id> [limit]   Create a new user
   user get <email>                       Get user details
@@ -106,6 +108,25 @@ async function getMetrics() {
     }
   } catch (error) {
     console.error('❌ Failed to get metrics:', error.message);
+  }
+}
+
+async function listOrganizations() {
+  const endpoint = getApiEndpoint();
+  console.log('🏢 Listing all organizations...');
+
+  try {
+    const result = await makeRequest(`${endpoint}/admin/organizations`);
+
+    console.log(`✅ Found ${result.count} organization(s):`);
+    result.organizations.forEach((org, index) => {
+      console.log(`   ${index + 1}. ${org.name} (${org.org_id})`);
+      console.log(`      Budget: $${org.monthly_budget_usd}/month`);
+      console.log(`      Failure Mode: ${org.failure_mode}`);
+      console.log(`      Created: ${org.created_at}`);
+    });
+  } catch (error) {
+    console.error('❌ Failed to list organizations:', error.message);
   }
 }
 
@@ -188,6 +209,28 @@ async function getOrganizationVkeys(orgId) {
     });
   } catch (error) {
     console.error('❌ Failed to get organization virtual keys:', error.message);
+  }
+}
+
+async function deleteOrganization(orgId) {
+  const endpoint = getApiEndpoint();
+  console.log(`🗑️  Deleting organization: ${orgId}`);
+  console.log('⚠️  This will cascade delete all users and virtual keys!');
+
+  try {
+    const result = await makeRequest(`${endpoint}/admin/organizations/${orgId}`, {
+      method: 'DELETE',
+    });
+
+    console.log('✅ Organization deleted successfully');
+    console.log(`   Organization: ${result.organization_id}`);
+    console.log(`   Deleted ${result.deleted_users} users`);
+    console.log(`   Deleted ${result.deleted_virtual_keys} virtual keys`);
+    if (result.users.length > 0) {
+      console.log('   Users: ' + result.users.join(', '));
+    }
+  } catch (error) {
+    console.error('❌ Failed to delete organization:', error.message);
   }
 }
 
@@ -474,6 +517,9 @@ async function main() {
 
       case 'org':
         switch (subcommand) {
+          case 'list':
+            await listOrganizations();
+            break;
           case 'create':
             if (!params[0]) {
               console.error('❌ Organization name is required');
@@ -502,9 +548,16 @@ async function main() {
             }
             await getOrganizationVkeys(params[0]);
             break;
+          case 'delete':
+            if (!params[0]) {
+              console.error('❌ Organization ID is required');
+              return;
+            }
+            await deleteOrganization(params[0]);
+            break;
           default:
             console.error(`❌ Unknown org subcommand: ${subcommand}`);
-            console.log('   Available: create, get, usage, vkeys');
+            console.log('   Available: list, create, get, usage, vkeys, delete');
         }
         break;
 

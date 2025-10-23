@@ -1,7 +1,11 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import * as z from "zod";
-import type { OrganizationConfig, VirtualKeyConfig } from "../../types";
+import type {
+  OrganizationConfig,
+  UserConfig,
+  VirtualKeyConfig,
+} from "../../types";
 import { getOrganizationQuotaRecord } from "../../lib/quota";
 
 const organizations = new Hono<{ Bindings: CloudflareBindings }>();
@@ -25,6 +29,51 @@ const OrgIdParamSchema = z.object({
 });
 
 // Organization Management
+organizations.get("/", async (c) => {
+  const { GATEWAY_KV } = c.env;
+
+  try {
+    // List all organizations
+    const { keys } = await GATEWAY_KV.list({ prefix: "org:" });
+    const orgConfigs = [];
+
+    for (const key of keys) {
+      if (key.name.endsWith(":config")) {
+        const orgConfig = (await GATEWAY_KV.get(
+          key.name,
+          "json",
+        )) as OrganizationConfig | null;
+        if (orgConfig) {
+          // Return config without sensitive provider keys
+          orgConfigs.push({
+            org_id: orgConfig.org_id,
+            name: orgConfig.name,
+            monthly_budget_usd: orgConfig.monthly_budget_usd,
+            failure_mode: orgConfig.failure_mode,
+            created_at: orgConfig.created_at,
+          });
+        }
+      }
+    }
+
+    return c.json({
+      organizations: orgConfigs,
+      count: orgConfigs.length,
+    });
+  } catch (error) {
+    console.error("List organizations error:", error);
+    return c.json(
+      {
+        error: {
+          message: "Failed to list organizations",
+          type: "server_error",
+        },
+      },
+      500,
+    );
+  }
+});
+
 organizations.post(
   "/",
   zValidator("json", CreateOrganizationSchema),
@@ -269,6 +318,91 @@ organizations.get(
         {
           error: {
             message: "Failed to get organization usage",
+            type: "server_error",
+          },
+        },
+        500,
+      );
+    }
+  },
+);
+
+organizations.delete(
+  "/:org_id",
+  zValidator("param", OrgIdParamSchema),
+  async (c) => {
+    const { GATEWAY_KV } = c.env;
+    const orgId = c.req.param("org_id");
+
+    try {
+      const organizationConfig = (await GATEWAY_KV.get(
+        `org:${orgId}:config`,
+        "json",
+      )) as OrganizationConfig | null;
+      if (!organizationConfig) {
+        return c.json(
+          { error: { message: "Organization not found", type: "not_found" } },
+          404,
+        );
+      }
+
+      // Cascade delete: Delete all virtual keys in the organization
+      const vkeyList = await GATEWAY_KV.list({ prefix: "vkey:" });
+      const deletedVkeys = [];
+
+      for (const key of vkeyList.keys) {
+        if (key.name.endsWith(":config")) {
+          const vkeyConfig = (await GATEWAY_KV.get(
+            key.name,
+            "json",
+          )) as VirtualKeyConfig | null;
+          if (vkeyConfig && vkeyConfig.org_id === orgId) {
+            // Delete virtual key config, quota, and id index
+            await GATEWAY_KV.delete(`vkey:${vkeyConfig.key_hash}:config`);
+            await GATEWAY_KV.delete(`vkey:${vkeyConfig.key_hash}:quota`);
+            await GATEWAY_KV.delete(`vkey:id:${vkeyConfig.key_id}`);
+            deletedVkeys.push(vkeyConfig.key_id);
+          }
+        }
+      }
+
+      // Cascade delete: Delete all users in the organization
+      const userList = await GATEWAY_KV.list({ prefix: "user:" });
+      const deletedUsers = [];
+
+      for (const key of userList.keys) {
+        if (key.name.endsWith(":config")) {
+          const userConfig = (await GATEWAY_KV.get(
+            key.name,
+            "json",
+          )) as UserConfig | null;
+          if (userConfig && userConfig.org_id === orgId) {
+            // Delete user config and quota
+            await GATEWAY_KV.delete(`user:${userConfig.user}:config`);
+            await GATEWAY_KV.delete(`user:${userConfig.user}:quota`);
+            deletedUsers.push(userConfig.user);
+          }
+        }
+      }
+
+      // Delete organization config and quota
+      await GATEWAY_KV.delete(`org:${orgId}:config`);
+      await GATEWAY_KV.delete(`org:${orgId}:quota`);
+
+      return c.json({
+        message: "Organization and all associated resources deleted successfully",
+        organization_id: orgId,
+        deleted_virtual_keys: deletedVkeys.length,
+        deleted_users: deletedUsers.length,
+        virtual_keys: deletedVkeys,
+        users: deletedUsers,
+      });
+    } catch (error) {
+      console.error("Delete organization error:", error);
+      return c.json(
+        {
+          error: {
+            message: "Failed to delete organization",
             type: "server_error",
           },
         },
