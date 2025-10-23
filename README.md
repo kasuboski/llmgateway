@@ -5,12 +5,13 @@ A production-ready Cloudflare Workers-based AI Gateway that provides virtual key
 ## 🚀 Features
 
 - **Global Edge Performance**: 2-5ms authentication worldwide via Cloudflare KV storage
+- **Three-Level Quota System**: Track and enforce quotas at virtual key, user, and organization levels
 - **Virtual Key Management**: API keys act as primary entities with built-in quota and configuration
-- **User Linkage**: Optional user field for grouping keys and analytics rollup
-- **Quota Enforcement**: Real-time usage tracking per virtual key with automatic monthly resets
+- **User Management**: Required user association for aggregate usage tracking across keys
+- **Hierarchical Quotas**: Individual key limits, per-user aggregate limits, and organization-wide budgets
 - **Failure Modes**: Organization-level fail-open or fail-closed behavior
 - **OpenAI Compatible**: Drop-in replacement for OpenAI API endpoints
-- **Simplified Architecture**: Direct key-to-config lookup without user indirection
+- **Simplified Architecture**: Direct key-to-config lookup with comprehensive quota tracking
 
 ## 📋 Quick Start
 
@@ -68,30 +69,60 @@ The server will be available at `http://localhost:8787`
    vkey:{key_hash}:config   → Virtual key configuration, limits, and metadata
    vkey:{key_hash}:quota    → Monthly usage tracking per key
    vkey:id:{key_id}         → Index for key_id lookups
+   user:{user}:config       → User configuration and aggregate quota limits
+   user:{user}:quota        → User aggregate usage tracking (across all keys)
    org:{org_id}:config      → Organization settings and provider keys
-   org:{org_id}:quota       → Organization usage tracking
+   org:{org_id}:quota       → Organization usage tracking (across all users)
    ```
+
+### Three-Level Quota System
+
+This system implements hierarchical quota tracking and enforcement:
+
+**1. Virtual Key Level (Individual Key)**
+- Each virtual key has its own monthly quota
+- Tracks usage for individual API keys
+- First level of quota enforcement
+
+**2. User Level (Aggregate Across Keys)**
+- Each user has a monthly quota limit
+- Aggregates usage across all keys owned by the user
+- Enables tracking users who have multiple API keys
+- Second level of quota enforcement
+
+**3. Organization Level (Company-Wide Budget)**
+- Organizations have monthly budget limits
+- Aggregates usage across all users in the organization
+- Provides company-wide spending control
+- Third level of quota enforcement
+
+**Benefits:**
+- Granular control at multiple levels
+- Track individual key usage while monitoring aggregate user spending
+- Organization-wide budget management
+- Flexible quota allocation (key quota ≤ user quota ≤ org budget)
+- Prevent quota abuse through multi-key creation
 
 ### Virtual Key Model
 
 Virtual keys are the primary entities in this system. Each virtual key:
 - Has its own monthly quota and configuration
 - Belongs to an organization
-- Optionally links to a user identifier for grouping/analytics
+- **Must** be associated with a user (required field)
 - Acts as both authentication token and usage tracking entity
 
-**Benefits:**
-- Simpler authentication (1 KV lookup instead of 2)
-- Better performance (2-3ms faster per request)
-- More flexible user management (user is just a string field)
-- Easier analytics rollup via Cloudflare Analytics API
+Each request checks quotas in order:
+1. Virtual key quota (has this specific key exceeded its limit?)
+2. User quota (has this user exceeded their aggregate limit across all keys?)
+3. Organization quota (has the organization exceeded its budget?)
 
 ### Data Flow
 
 ```
-API Request → Auth (vkey lookup) → Quota Check → AI Gateway → AI Provider
-                ↓                       ↓
-           KV Lookup (vkey)      Usage Tracking (vkey + org)
+API Request → Auth (vkey lookup) → Three-Level Quota Check → AI Gateway → AI Provider
+                ↓                           ↓
+           KV Lookup (vkey)      Check: vkey → user → org quotas
+                                 Update: vkey + user + org usage
 ```
 
 ## 🔧 Configuration
@@ -136,17 +167,56 @@ Organizations can configure how the system behaves during outages:
 - `GET /admin/organizations/{org_id}/usage` - Get organization usage
 - `GET /admin/organizations/{org_id}/vkeys` - List all virtual keys for organization
 
+#### User Management
+- `POST /admin/users` - Create user
+  ```json
+  {
+    "user": "alice@company.com",
+    "org_id": "org_123",
+    "monthly_limit_usd": 200
+  }
+  ```
+
+- `GET /admin/users/{user}` - Get user details
+- `PATCH /admin/users/{user}` - Update user
+  ```json
+  {
+    "monthly_limit_usd": 300
+  }
+  ```
+
+- `DELETE /admin/users/{user}` - Delete user
+- `GET /admin/users/{user}/usage` - Get user aggregate usage
+  ```json
+  {
+    "user": "alice@company.com",
+    "org_id": "org_123",
+    "usage": {
+      "current_month": "2025-01",
+      "usage_usd": 145.67,  // Total across all user's keys
+      "limit_usd": 200,
+      "remaining_usd": 54.33,
+      "request_count": 3241,
+      "last_update": "2025-01-15T10:30:00Z"
+    }
+  }
+  ```
+
+- `GET /admin/users/{user}/vkeys` - List all virtual keys for user
+
 #### Virtual Key Management
 - `POST /admin/vkeys` - Create virtual key
   ```json
   {
     "org_id": "org_123",
-    "user": "alice@company.com",  // Optional
+    "user": "alice@company.com",  // REQUIRED
     "name": "Alice's Production Key",  // Optional
     "monthly_limit_usd": 100
   }
   ```
   Returns the API key (shown only once)
+
+  **Note:** User must exist before creating virtual key
 
 - `GET /admin/vkeys/{key_id}` - Get virtual key details
 - `PATCH /admin/vkeys/{key_id}` - Update virtual key
@@ -192,10 +262,10 @@ Organizations can configure how the system behaves during outages:
 
 ## 💡 Usage Examples
 
-### 1. Create Organization and Virtual Keys
+### 1. Create Organization, Users, and Virtual Keys
 
 ```bash
-# Create organization
+# Step 1: Create organization
 curl -X POST https://your-worker.workers.dev/admin/organizations \
   -H "Authorization: Bearer ${ADMIN_API_KEY}" \
   -H "Content-Type: application/json" \
@@ -209,7 +279,26 @@ curl -X POST https://your-worker.workers.dev/admin/organizations \
     }
   }'
 
-# Create virtual key for Alice
+# Step 2: Create users
+curl -X POST https://your-worker.workers.dev/admin/users \
+  -H "Authorization: Bearer ${ADMIN_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user": "alice@acme.com",
+    "org_id": "org_1234567890_abc123",
+    "monthly_limit_usd": 1000
+  }'
+
+curl -X POST https://your-worker.workers.dev/admin/users \
+  -H "Authorization: Bearer ${ADMIN_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user": "bob@acme.com",
+    "org_id": "org_1234567890_abc123",
+    "monthly_limit_usd": 500
+  }'
+
+# Step 3: Create virtual keys
 curl -X POST https://your-worker.workers.dev/admin/vkeys \
   -H "Authorization: Bearer ${ADMIN_API_KEY}" \
   -H "Content-Type: application/json" \
@@ -221,7 +310,6 @@ curl -X POST https://your-worker.workers.dev/admin/vkeys \
   }'
 # Save the returned api_key!
 
-# Create virtual key for Bob
 curl -X POST https://your-worker.workers.dev/admin/vkeys \
   -H "Authorization: Bearer ${ADMIN_API_KEY}" \
   -H "Content-Type: application/json" \
